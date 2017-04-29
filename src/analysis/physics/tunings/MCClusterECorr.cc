@@ -63,6 +63,9 @@ void MCClusterECorr::CBTAPS_t::Fill(const TCluster& caloCluster, double Etrue) c
     if(caloCluster.HasFlag(TCluster::Flags_t::TouchesHoleCentral))
         return;
 
+    if(!std_ext::degree_to_radian(interval<double>(2.0,16.0)).Contains(caloCluster.Position.Theta()))
+        return;
+
     const auto EkRec = caloCluster.Energy;
     const auto EtrueErec = Etrue/EkRec;
     const auto clSise = caloCluster.Hits.size();
