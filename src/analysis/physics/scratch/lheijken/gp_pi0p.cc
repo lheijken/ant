@@ -25,30 +25,28 @@ using namespace ant::analysis;
 using namespace ant::analysis::physics;
 
 scratch_lheijken_gppi0p::scratch_lheijken_gppi0p(const std::string& name, OptionsPtr opts):
-    Physics(name, opts),
+    Physics(name, opts)
 {
-
+    const BinSettings ETGBins(100,0.,1000.);
+    TrueGammaE   = HistFac.makeTH1D("energies of true gammas","E_{#gamma}","",ETGBins,"TrueGammaE");
+    TrueGammaIM  = HistFac.makeTH1D("IM of true gammas","m_{#gamma#gamma}","",ETGBins, "TrueGammasIM");
 }
 
 
 void scratch_lheijken_gppi0p::ProcessEvent(const TEvent& event, manager_t&)
 {
-    // If MC, track detection efficiency
-    // *************************************
-    if((event.Reconstructed().ID.isSet(ant::TID::Flags_t::MC)) && (signal)){
-
-        auto pi0 = utils::ParticleTools::FindParticle(ParticleTypeDatabase::Pi0,event.MCTrue().ParticleTree);
-        if(!pi0) LOG(ERROR) << "Did not find pi0 in MC True ... strange!!!";
-
-        for (const auto &tc : event.Reconstructed().TaggerHits){
-
-            promptrandom.SetTaggerTime(triggersimu.GetCorrectedTaggerTime(tc));
-            detection_efficiency.TrackSignalEvent(*pi0, 0, tc, promptrandom);
+    // MC true stuff
+    if(event.Reconstructed().ID.isSet(ant::TID::Flags_t::MC)){
+        // Fetches a list of all gammas in the MCTrue tree
+        auto GammasTrue = utils::ParticleTools::FindParticles(ParticleTypeDatabase::Photon,event.MCTrue().ParticleTree);
+        for(const auto& ph : GammasTrue) {
+            TrueGammaE->Fill(ph->Ek());
         }
+        utils::ParticleTools::FillIMCombinations(TrueGammaIM,2,GammasTrue);
     }
 
 
-
+/*
     // Get full list of particles, create neutral/charged list
     // *******************************************************
     const auto& candidates = event.Reconstructed().Candidates;
@@ -123,7 +121,7 @@ void scratch_lheijken_gppi0p::ProcessEvent(const TEvent& event, manager_t&)
         i++;
     }
 
-
+*/
 }
 
 void scratch_lheijken_gppi0p::Finish()
@@ -132,12 +130,18 @@ void scratch_lheijken_gppi0p::Finish()
 
 void scratch_lheijken_gppi0p::ShowResult()
 {
+     canvas(GetName())
+             <<  TrueGammaE
+             << TrueGammaIM
+             << endc; // actually draws the canvas
+    /*
     ant::canvas(GetName()+": Analysis cuts")
             << TTree_drawable(steps.Tree, "cut.c_str()>>cuts_signal","promptrandom*isSignal")
             << TTree_drawable(steps.Tree, "cut.c_str()>>cuts_background","promptrandom*(!isSignal)")
             << TTree_drawable(steps.Tree, "isSignal","promptrandom")
             << TTree_drawable(steps.Tree, "isSignal","promptrandom","signalcount","0 = bkg, 1 = sig","",BinSettings(2))
             << endc; // actually draws the canvas
+*/
 }
 
 AUTO_REGISTER_PHYSICS(scratch_lheijken_gppi0p)

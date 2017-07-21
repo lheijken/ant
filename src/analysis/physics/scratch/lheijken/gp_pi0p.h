@@ -19,6 +19,8 @@ namespace physics {
 
 class scratch_lheijken_gppi0p: public Physics {
 protected:
+    TH1D* TrueGammaE = nullptr;
+    TH1D* TrueGammaIM = nullptr;
 
 public:
     scratch_lheijken_gppi0p(const std::string& name, OptionsPtr opts);
