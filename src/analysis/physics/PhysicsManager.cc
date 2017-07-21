@@ -4,7 +4,6 @@
 #include "input/DataReader.h"
 
 #include "tree/TSlowControl.h"
-#include "tree/TAntHeader.h"
 #include "base/Logger.h"
 
 #include "slowcontrol/SlowControlManager.h"
@@ -22,16 +21,11 @@ using namespace ant::analysis;
 
 PhysicsManager::PhysicsManager(volatile bool* interrupt_) :
     physics(),
-    interrupt(interrupt_)
+    interrupt(interrupt_),
+    processedTIDrange(TID(), TID())
 {}
 
 PhysicsManager::~PhysicsManager() {}
-
-void PhysicsManager::SetAntHeader(TAntHeader& header)
-{
-    header.FirstID = firstID;
-    header.LastID = lastID;
-}
 
 void PhysicsManager::ShowResults()
 {
@@ -72,13 +66,11 @@ void PhysicsManager::ReadFrom(
 
     // prepare slowcontrol, init here since physics classes
     // register slowcontrol variables in constructor
-    slowcontrol_mgr = std_ext::make_unique<SlowControlManager>();
+    SlowControlManager slowControlManager;
 
 
     // prepare output of TEvents
-    treeEvents = new TTree("treeEvents","TEvent data");
-    treeEventPtr = nullptr;
-    treeEvents->Branch("data", addressof(treeEventPtr));
+    treeEvents.CreateBranches(new TTree("treeEvents","TEvent data"));
 
     long long nEventsRead = 0;
     long long nEventsProcessed = 0;
@@ -124,18 +116,18 @@ void PhysicsManager::ReadFrom(
             nEventsRead++;
 
             // dump it into slowcontrol until full...
-            if(slowcontrol_mgr->ProcessEvent(move(event)))
+            if(slowControlManager.ProcessEvent(move(event)))
                 break;
             // ..or max buffersize reached: 20000 corresponds to two Acqu Scaler blocks
-            if(slowcontrol_mgr->BufferSize()>20000) {
+            if(slowControlManager.BufferSize()>20000) {
                 throw Exception(std_ext::formatter() <<
-                                "Slowcontrol buffer reached maximum size " << slowcontrol_mgr->BufferSize()
+                                "Slowcontrol buffer reached maximum size " << slowControlManager.BufferSize()
                                 << " without becoming complete. Stopping.");
             }
         }
 
         // read the slowcontrol_mgr's buffer and process the events
-        while(auto buf_event = slowcontrol_mgr->PopEvent()) {
+        while(auto buf_event = slowControlManager.PopEvent()) {
 
             auto& event = buf_event.Event;
 
@@ -156,7 +148,7 @@ void PhysicsManager::ReadFrom(
                     reached_maxevents = true;
                     // we cannot simply break here since might
                     // need to save stuff for slowcontrol purposes
-                    if(slowcontrol_mgr->BufferSize()==0)
+                    if(slowControlManager.BufferSize()==0)
                         break;
                 }
 
@@ -167,8 +159,8 @@ void PhysicsManager::ReadFrom(
                     // prefer Reconstructed ID, but at least one branch should be non-null
                     const auto& eventid = event.HasReconstructed() ? event.Reconstructed().ID : event.MCTrue().ID;
                     if(nEventsAnalyzed==0)
-                        firstID = eventid;
-                    lastID = eventid;
+                        processedTIDrange.Start() = eventid;
+                    processedTIDrange.Stop() = eventid;
 
                     nEventsAnalyzed++;
 
@@ -189,8 +181,7 @@ void PhysicsManager::ReadFrom(
         pclass->Finish();
     }
 
-    VLOG(5) << "First EventId processed: " << firstID;
-    VLOG(5) << "Last  EventId processed: " << lastID;
+    VLOG(5) << "Processed TID range: " << processedTIDrange;
 
     string processed_str;
     if(nEventsProcessed != nEventsAnalyzed)
@@ -203,20 +194,20 @@ void PhysicsManager::ReadFrom(
               << processed_str << ", speed "
               << nEventsProcessed/progress.GetTotalSecs() << " event/s";
 
-    const auto nEventsSavedTotal = treeEvents->GetEntries();
+    const auto nEventsSavedTotal = treeEvents.Tree->GetEntries();
     if(nEventsSaved==0) {
         if(nEventsSavedTotal>0)
             VLOG(5) << "Deleting " << nEventsSavedTotal << " treeEvents from slowcontrol only";
-        delete treeEvents;
+        delete treeEvents.Tree;
     }
-    else if(treeEvents->GetCurrentFile() != nullptr) {
-        treeEvents->Write();
+    else if(treeEvents.Tree->GetCurrentFile() != nullptr) {
+        treeEvents.Tree->Write();
         const auto n_sc = nEventsSavedTotal - nEventsSaved;
         LOG(INFO) << "Wrote " << nEventsSaved  << " treeEvents"
                   << (n_sc>0 ? string(std_ext::formatter() << " (+slowcontrol: " << n_sc << ")") : "")
                   << ": "
-                  << (double)treeEvents->GetTotBytes()/(1 << 20) << " MB (uncompressed), "
-                  << (double)treeEvents->GetTotBytes()/nEventsSavedTotal << " bytes/event";
+                  << (double)treeEvents.Tree->GetTotBytes()/(1 << 20) << " MB (uncompressed), "
+                  << (double)treeEvents.Tree->GetTotBytes()/nEventsSavedTotal << " bytes/event";
     }
 
     // cleanup readers (important for stopping progress output)
@@ -268,7 +259,7 @@ void PhysicsManager::SaveEvent(input::event_t event, const physics::manager_t& m
 {
     if(manager.saveEvent || event.SavedForSlowControls) {
         // only warn if manager says it should save
-        if(!treeEvents->GetCurrentFile() && manager.saveEvent)
+        if(!treeEvents.Tree->GetCurrentFile() && manager.saveEvent)
             LOG_N_TIMES(1, WARNING) << "Writing treeEvents to memory. Might be a lot of data!";
 
 
@@ -276,7 +267,7 @@ void PhysicsManager::SaveEvent(input::event_t event, const physics::manager_t& m
         if(!manager.keepReadHits && !event.SavedForSlowControls)
             event.ClearDetectorReadHits();
 
-        treeEventPtr = addressof(event);
-        treeEvents->Fill();
+        treeEvents.data = move(event);
+        treeEvents.Tree->Fill();
     }
 }

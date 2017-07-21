@@ -17,8 +17,10 @@ set(DICT_HEADERS
     DisplayClustering.h
     TwoPi0_MCSmearing_tools.h
     Omega.h
+    pi0.h
     TimeDependentCalibration.h
     Fits.h
+    pi0_true_calib.h
   )
 
 set(SRCS
@@ -39,9 +41,11 @@ set(SRCS
     DisplayClustering.cc
     TwoPi0_MCSmearing_tools.cc
     Omega.cc
+    pi0.cc
     TimeDependentCalibration.cc
     Fits.cc
     hadd.cc
+    pi0_true_calib.cc
   )
 
 set(ROOT_DICTIONARY "${CMAKE_CURRENT_BINARY_DIR}/G__analysis_codes.cc")

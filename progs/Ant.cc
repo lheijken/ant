@@ -61,37 +61,6 @@ int main(int argc, char** argv) {
         terminated = true;
     });
 
-    // check for bash completion commands
-    if(argc >= 2) {
-        const string arg1(argv[1]);
-
-        if(arg1 == "--list-physics") {
-            for(const auto& name : analysis::PhysicsRegistry::GetList()) {
-                cout << name << endl;
-            }
-            return EXIT_SUCCESS;
-        }
-
-        if(arg1 == "--list-setups") {
-            for(const auto& name : ExpConfig::Setup::GetNames()) {
-                cout << name << endl;
-            }
-            return EXIT_SUCCESS;
-        }
-
-        if(arg1 == "--list-calibrations") {
-            if(argc == 3) {
-                const string setup_name(argv[2]);
-                ExpConfig::Setup::SetByName(setup_name);
-                auto& setup = ExpConfig::Setup::Get();
-                for(const auto& calibration : setup.GetCalibrations()) {
-                    cout << calibration->GetName() << endl;
-                }
-            }
-            return EXIT_SUCCESS;
-        }
-    }
-
     TCLAP::CmdLine cmd("Ant", ' ', "0.1");
 
     auto cmd_verbose = cmd.add<TCLAP::ValueArg<int>>("v","verbose","Verbosity level (0..9)", false, 0,"int");
@@ -202,7 +171,7 @@ int main(int argc, char** argv) {
             VLOG(5) << "Unpacker: " << e.what();
         }
         catch(RawFileReader::Exception e) {
-            LOG(WARNING) << "Unpacker: Error opening file "<< inputfile<<": " << e.what();
+            LOG(WARNING) << "RawFileReader: Error opening file " << inputfile << ": " << e.what();
         }
         catch(ExpConfig::ExceptionNoSetup) {
             LOG(ERROR) << "The inputfile " << inputfile << " cannot be unpacked without a manually specified setupname. "
@@ -403,7 +372,11 @@ int main(int argc, char** argv) {
 
     TAntHeader* header = new TAntHeader();
     gDirectory->Add(header);
-    pm.SetAntHeader(*header);
+    {
+        const auto& tidRange = pm.GetProcessedTIDRange();
+        header->FirstID = tidRange.Start();
+        header->LastID  = tidRange.Stop();
+    }
 
     // add some more info about the current state
     try
@@ -434,13 +407,13 @@ int main(int argc, char** argv) {
         }
         else {
             argc=0; // prevent TRint to parse any cmdline
-            TRint app("Ant",&argc,argv,nullptr,0,true);
+            auto app = new TRint("Ant",&argc,argv,nullptr,0,true);
 
             if(masterFile != nullptr)
                 LOG(INFO) << "Stopped running, but close ROOT properly to write data to disk.";
 
             pm.ShowResults();
-            app.Run(kTRUE); // really important to return...
+            app->Run(kTRUE); // really important to return...
             masterFile = nullptr;   // and to destroy the master WrapTFile before TRint is destroyed
         }
 

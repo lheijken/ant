@@ -22,6 +22,9 @@ namespace ant {
 namespace analysis {
 namespace physics {
 
+
+
+
 struct singlePi0 :  Physics {
 
     //===================== Settings   ========================================================
@@ -120,6 +123,7 @@ struct singlePi0 :  Physics {
         ADD_BRANCH_T(double, CosThetaPi0)
         ADD_BRANCH_T(double, Egamma)
         ADD_BRANCH_T(int,    TaggerBin)
+        ADD_BRANCH_T(std::vector<double>, gThetas)
         virtual ~effTree_t(){}
     };
 
@@ -192,6 +196,13 @@ struct singlePi0 :  Physics {
         ADD_BRANCH_T(double,                       EMB_prob)
         ADD_BRANCH_T(double,                       EMB_chi2)
         ADD_BRANCH_T(int,                          EMB_iterations)
+
+        ADD_BRANCH_T(double,                       EMB_pull_p_theta)
+        ADD_BRANCH_T(double,                       EMB_pull_p_phi)
+        ADD_BRANCH_T(std::vector<double>,          EMB_pull_g_thetas)
+        ADD_BRANCH_T(std::vector<double>,          EMB_pull_g_phis)
+
+
         void SetEMB(const utils::KinFitter& kF, const APLCON::Result_t& result);
 
         static constexpr const char* treeName()       {return "tree";}
@@ -210,6 +221,32 @@ struct singlePi0 :  Physics {
 
     void FillStep(const std::string& step) {hist_steps->Fill(step.c_str(),1);}
 
+};
+
+struct singlePi0MCTrue :  Physics {
+    TH2D* theta_p_labVStheta_pi0_coms = nullptr;
+    TH2D* theta_g_labVStheta_pi0_coms = nullptr;
+
+    TH2D* theta_p_labVStheta_pi0_coms_hits = nullptr;
+    TH2D* theta_g_labVStheta_pi0_coms_hits = nullptr;
+
+    TH1D* theta_g = nullptr;
+    TH1D* theta_p = nullptr;
+
+    struct tree_t : WrapTTree
+    {
+        ADD_BRANCH_T(TLorentzVector, p_lab)
+        ADD_BRANCH_T(double, theta_pi0_coms)
+
+        ADD_BRANCH_T(std::vector<TLorentzVector>, gamma_lab,2)
+    };
+
+    tree_t tree;
+
+    singlePi0MCTrue(const std::string& name, OptionsPtr opts);
+    virtual void ProcessEvent(const TEvent& event, manager_t& manager) override;
+    virtual void Finish() override;
+    virtual void ShowResult() override;
 };
 
 

@@ -23,16 +23,10 @@ using namespace std;
 
 using singlePi0_PlotBase = TreePlotterBase_t<singlePi0::PionProdTree>;
 
-auto singlePi0Cut = [](const singlePi0::PionProdTree& tree)
-{
-    return (
-                tree.Neutrals < 2
-           );
-};
 
 OptionsPtr global_opts = nullptr;
 auto get_is_final = [](const OptionsPtr& opts) {return opts->Get<bool>("final", false);};
-auto get_cuts_str = [](const OptionsPtr& opts) {return opts->Get<string>("cutstring","dicardedEk<20/EMB_prob>0.05/NoTouchesHole/Pi0PIDVeto==0");};
+auto get_cuts_str = [](const OptionsPtr& opts) {return opts->Get<string>("cutstring","dicardedEk<20/EMB_prob>0.05/ignore/Pi0PIDVeto==0");};
 
 using namespace ant::analysis::plot;
 using WrapTree = singlePi0::PionProdTree;
@@ -268,12 +262,26 @@ protected:
             });
 
 
-            AddTH1("#pi^0 - fitted", "cos(#theta)","#", cosThetaBins ,"costhetafit", false, addTo::overview,
+            AddTH1("#pi^0 - fitted", "cos(#theta)","#", cosThetaBins ,"costhetafit", true, addTo::both,
                    [] (TH1D* h, const Fill_t& f)
             {
 
                 h->Fill(f.Tree.EMB_cosThetaPi0COMS(),f.TaggW());
             });
+
+            AddTH1("#pi^0 - raw", "cos(#theta)","#", cosThetaBins ,"costheta", true, addTo::both,
+                   [] (TH1D* h, const Fill_t& f)
+            {
+
+                h->Fill(f.Tree.cosThetaPi0COMS(),f.TaggW());
+            });
+
+
+            AddTH2("splitoffs","cos(#theta_{#pi^{0}})","# clusters",cosThetaBins, BinSettings(10),"splitoffs",false,addTo::overview,
+                   [] (TH2D* h, const Fill_t& f)
+            {
+                h->Fill(f.Tree.cosThetaPi0COMS(),f.Tree.NCands(),f.TaggW());
+            } );
 
             AddTH2("reconstructed","Tagger channel","cos(#theta_{#pi^{0}})",taggerBins, cosThetaBins,"recon", true, addTo::both,
                    []( TH2D* h, const Fill_t& f)
@@ -298,6 +306,113 @@ protected:
                    []( TH2D* h, const Fill_t& f)
             {
                 h->Fill(f.RTree.TaggerBin(), cos(f.RTree.Theta()),f.TaggW());
+            });
+
+
+
+            // ============================================    pulls   ===========================================================================================
+            const BinSettings pullSettings(120,-10,10);
+            AddTH2("pulls_photons","#theta_{lab} [#circ]","pulls",BinSettings(90,0,180),pullSettings,"pulls_photons",false, addTo::overview,
+                   [] (TH2D* h, const Fill_t& f)
+            {
+                for ( auto i = 0u ; i < f.Tree.photons().size() ; ++i)
+                {
+                    h->Fill(f.Tree.EMB_photons().at(i).Theta() * 180 / 3.14159 , f.Tree.EMB_pull_g_thetas().at(i),f.TaggW());
+                }
+            });
+            AddTH2("pulls_photons_picoms","cos(#theta^{cms}_{#pi^{0}})","pulls",cosThetaBins,pullSettings,"pulls_photons_picoms",false, addTo::overview,
+                   [] (TH2D* h, const Fill_t& f)
+            {
+                for ( auto i = 0u ; i < f.Tree.photons().size() ; ++i)
+                {
+                    h->Fill(cos(f.Tree.cosThetaPi0COMS()), f.Tree.EMB_pull_g_thetas().at(i),f.TaggW());
+                }
+            });
+
+            AddTH2("pulls_protons","#theta_{lab} [#circ]","pulls",BinSettings(90,0,180),pullSettings,"pulls_protons",false, addTo::overview,
+                   [] (TH2D* h, const Fill_t& f)
+            {
+                h->Fill(f.Tree.EMB_proton().Theta() * 180 / 3.14159 , f.Tree.EMB_pull_p_theta(),f.TaggW());
+            });
+            AddTH2("pulls_protons_picoms","cos(#theta^{cms}_{#pi^{0}})","pulls",cosThetaBins,pullSettings,"pulls_protons_picoms",false, addTo::overview,
+                   [] (TH2D* h, const Fill_t& f)
+            {
+                h->Fill(cos(f.Tree.cosThetaPi0COMS()), f.Tree.EMB_pull_p_theta(),f.TaggW());
+            });
+
+
+            // ============================================    migration  ===========================================================================================
+            AddTH2("pion migration lab sytem","mc #theta_{lab}","kin fit #theta_{lab}",BinSettings(180), BinSettings(180),"pionmig", true, addTo::overview,
+                   []( TH2D* h, const Fill_t& f)
+            {
+                h->Fill(std_ext::radian_to_degree(f.RTree.Theta()), std_ext::radian_to_degree(f.Tree.EMB_photonSum().Theta()),f.TaggW());
+            });
+
+            AddTH2("pion migration change","fit (#theta_{#pi^{0}})","#Delta(#theta_{#pi^{0}}) / (mc  #theta_{#pi^{0}})) ",BinSettings(180), BinSettings(100,-0.5,0.5),"pionmigdllab", true, addTo::overview,
+                   []( TH2D* h, const Fill_t& f)
+            {
+                h->Fill( std_ext::radian_to_degree(f.Tree.EMB_photonSum().Theta()), (f.RTree.Theta() - f.Tree.EMB_photonSum().Theta()) / f.RTree.Theta() ,f.TaggW());
+            });
+
+            AddTH2("pion migration coms","mc cos(#theta_{#pi^{0}})","kin fit cos(#theta_{#pi^{0}})",cosThetaBins, cosThetaBins,"pionmigc", true, addTo::overview,
+                   []( TH2D* h, const Fill_t& f)
+            {
+                h->Fill(f.RTree.CosThetaPi0(), f.Tree.EMB_cosThetaPi0COMS() ,f.TaggW());
+            });
+
+            AddTH2("pion migration change","fit cos(#theta_{#pi^{0}})","#Deltacos(#theta_{#pi^{0}}) ",cosThetaBins, BinSettings(100,-0.1,0.1),"pionmigd", true, addTo::overview,
+                   []( TH2D* h, const Fill_t& f)
+            {
+                h->Fill( f.Tree.EMB_cosThetaPi0COMS(), (f.RTree.CosThetaPi0() - f.Tree.EMB_cosThetaPi0COMS()) ,f.TaggW());
+            });
+
+            AddTH2("photons: #theta_{rec} - #theta_{mc}","cos(#theta_{#pi^{0}})","lab: fittet #theta - true #theta  {#gamma} [#circ]",BinSettings(100,-1,1),BinSettings(100,-25,25), "photonangles", true, addTo::overview,
+                   []( TH2D* h, const Fill_t& f)
+            {
+                const auto& fittedPhotons = f.Tree.EMB_photons();
+                const auto& trueThetas   = f.RTree.gThetas();
+
+                if ( fittedPhotons.size() != trueThetas.size())
+                    return;
+                if (trueThetas.size() != 2)
+                    return;
+
+                vector<double> fittedThetas(trueThetas.size());
+                transform(fittedPhotons.begin(),fittedPhotons.end(), fittedThetas.begin(),
+                          [](const TLorentzVector& g) { return g.Theta();});
+
+                pair<bool,bool> smallestDiff;
+                auto diff = std_ext::inf;
+
+                assert(fittedThetas.size() == 2 && trueThetas.size() == 2);
+                for (const auto ir: {false,true})
+                    for (const auto it: {false,true})
+                    {
+                        const auto tdiff =( fittedThetas.at(ir) - trueThetas.at(it));
+                        if (abs(tdiff) < abs(diff))
+                        {
+                            diff = tdiff;
+                            smallestDiff = {ir,it};
+                        }
+                    }
+
+                h->Fill(
+                            f.RTree.CosThetaPi0(),
+                            std_ext::radian_to_degree(diff),
+                            f.TaggW()
+                            );
+                h->Fill(
+                            f.RTree.CosThetaPi0(),
+                            std_ext::radian_to_degree(fittedThetas.at(!(smallestDiff.first)) - trueThetas.at(!(smallestDiff.second))),
+                            f.TaggW()
+                            );
+            });
+
+            AddTH2("lbtocosthetagamma","lab #theta_{#gamma}","cos(#theta_{#pi^{0}})",BinSettings(100,0,180),BinSettings(100,-1,1), "convangletocosgamma", true, addTo::overview,
+                   []( TH2D* h, const Fill_t& f)
+            {
+                for (const auto& g: f.RTree.gThetas())
+                    h->Fill( std_ext::radian_to_degree(g), cos(f.RTree.Theta()),f.TaggW());
             });
 
 
@@ -379,6 +494,7 @@ protected:
             }
         };
 
+
         static cuttree::Cuts_t<Fill_t> GetCuts() {
 
             using cuttree::MultiCut_t;
@@ -398,59 +514,21 @@ protected:
                                   { "EMB_prob>0.10", [](const Fill_t& f){ return TreeCuts::KinFitProb(f, 0.1);  }}
                               });
             cuts.emplace_back(MultiCut_t<Fill_t>{
-                                  {"NoTouchesHole", [](const Fill_t& f) { return TreeCuts::allPhotonsInCB(f); }},
-                                  ignore
-                              });
-            cuts.emplace_back(MultiCut_t<Fill_t>{
                                   {"Pi0PIDVeto==0",     [](const Fill_t& f) { return f.Tree.PionPIDVetoE() == 0;   }},
                                   {"Pi0PIDVeto<0.2",    [](const Fill_t& f) { return f.Tree.PionPIDVetoE() <  0.2; }}
                               });
 
             if (get_is_final(global_opts))
             {
-                const auto cutsrings  = tools::tokenize_cuts(get_cuts_str(global_opts));
-                if ( cutsrings.size() > cuts.size())
-                {
-                    throw runtime_error("more cuts supplied than available");
-                }
-                std::vector<std::function<bool(const Fill_t&)>> cutFunctions;
-
-                size_t deep = 0;
-                for ( const auto& clist: cuts)
-                {
-                    if (deep == cutsrings.size())
-                        break;
-                    bool found = false;
-                    for (const auto& ccut: clist)
-                    {
-                        if (ccut.Name == cutsrings.at(deep))
-                        {
-                            cutFunctions.emplace_back(ccut.Passes);
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found)
-                    {
-                        throw runtime_error(std_ext::formatter() << "invalid cutsring" << cutsrings.at(deep));
-                    }
-                    deep++;
-                }
-
                 return cuttree::Cuts_t<Fill_t>({
-                                         { {"final", [&cutFunctions] (const Fill_t& f)
-                                            {
-                                                for (const auto& fu: cutFunctions)
-                                                {
-                                                    if ( !fu(f) )
-                                                    {
-                                                        return false;
-                                                    }
-                                                }
-                                                return true;
-                                            }
-                                         } }
-                                       });
+                                                   { {"final", [] (const Fill_t& f){
+                                                          return
+                                                          TreeCuts::DircardedEk(f,global_opts->Get<double>("dEk", 20.) ) &&
+                                                          TreeCuts::KinFitProb(f, global_opts->Get<double>("prob", 0.05)) &&
+                                                          f.Tree.PionPIDVetoE() <= global_opts->Get<double>("veto", 0.0);
+                                                      }
+                                                     } }
+                                               });
             }
 
             return cuts;

@@ -14,64 +14,6 @@ using namespace ant::analysis;
 using namespace ant::analysis::plot;
 using namespace std;
 
-template<typename Hist_t>
-struct MCTrue_Splitter : cuttree::StackedHists_t<Hist_t> {
-
-    // Hist_t should have that type defined
-    using Fill_t = typename Hist_t::Fill_t;
-
-    MCTrue_Splitter(const HistogramFactory& histFac,
-                    const cuttree::TreeInfo_t& treeInfo) :
-        cuttree::StackedHists_t<Hist_t>(histFac, treeInfo)
-    {
-        using histstyle::Mod_t;
-        this->GetHist(0, "Data", Mod_t::MakeDataPoints(kBlack));
-        this->GetHist(5, "D07", Mod_t::MakeDataPoints(kGray));
-        this->GetHist(6, "D10", Mod_t::MakeDataPoints(kGray));
-        this->GetHist(7, "D12", Mod_t::MakeDataPoints(kGray));
-
-        this->GetHist(1, "Sig",  Mod_t::MakeLine(kRed, 2.0));
-        this->GetHist(2, "Ref",  Mod_t::MakeLine(kRed, 2.0));
-        // mctrue is never >=3 (and <9) in tree, use this to sum up all MC and all bkg MC
-        // see also Fill()
-        this->GetHist(3, "Sum_MC", Mod_t::MakeLine(kBlack, 2.0));
-        this->GetHist(4, "Bkg_MC", Mod_t::MakeFill(kGray+2));
-    }
-
-    void Fill(const Fill_t& f) {
-
-        const unsigned mctrue = f.Common.MCTrue;
-
-        auto get_bkg_name = [] (unsigned mctrue) {
-            const string& name = mctrue>=10 ?
-                        physics::EtapOmegaG::ptreeBackgrounds[mctrue-10].Name
-                    : "Other";
-            return "Bkg_"+name;
-        };
-
-        using histstyle::Mod_t;
-        const Hist_t& hist = mctrue<9 ? this->GetHist(mctrue) :
-                                        this->GetHist(mctrue,
-                                                      get_bkg_name(mctrue),
-                                                      Mod_t::MakeLine(histstyle::color_t::GetLight(mctrue-9), 1, kGray+2)
-                                                      );
-
-        hist.Fill(f);
-
-        // handle MC_all and MC_bkg
-        if(mctrue>0) {
-            this->GetHist(3).Fill(f);
-            if(mctrue >= 9)
-                this->GetHist(4).Fill(f);
-        }
-
-        // handle D07/D10/D12
-        if(mctrue == 0) {
-            this->GetHist(4+f.Common.BeamTime).Fill(f);
-        }
-    }
-};
-
 // define the structs containing the histograms
 // and the cuts. for simple branch variables, that could
 // be combined...
@@ -116,15 +58,15 @@ struct CommonHist_t {
 
     const bool isLeaf;
     const bool includeProtonHists;
-    const bool minimalMode;
+    const bool moreCutsLessPlots;
 
 
     CommonHist_t(HistogramFactory HistFac, cuttree::TreeInfo_t treeInfo) :
         isLeaf(treeInfo.nDaughters==0),
-        includeProtonHists(opts->Get<bool>("IncludeProtonHists", false)),
-        minimalMode(opts->Get<bool>("MinimalMode", false))
+        includeProtonHists(opts->Get<bool>("IncludeProtonHists")),
+        moreCutsLessPlots(opts->Get<bool>("MoreCutsLessPlots"))
     {
-        if(minimalMode)
+        if(moreCutsLessPlots)
             return;
 
         const AxisSettings axis_CBSumVetoE{"CBSumVetoE / MeV", BinSettings(100,0,4)};
@@ -157,7 +99,7 @@ struct CommonHist_t {
 
 
     void Fill(const Fill_t& f) const {
-        if(minimalMode)
+        if(moreCutsLessPlots)
             return;
 
         h_CBSumE->Fill(f.Common.CBSumE, f.Weight());
@@ -243,16 +185,18 @@ struct SigHist_t : CommonHist_t {
     SigHist_t(HistogramFactory HistFac, cuttree::TreeInfo_t treeInfo)
         : CommonHist_t(HistFac, treeInfo)
     {
+        if(moreCutsLessPlots && !isLeaf)
+            return;
 
         h_IM_4g = HistFac.makeTH1D("#eta' IM", "IM(#pi^{0}#gamma#gamma) / MeV","",bins_IM_Etap,"h_IM_4g");
+
+        if(moreCutsLessPlots)
+            return;
 
         auto ept = ExpConfig::Setup::GetDetector<expconfig::detector::EPT>();
         h_IM_4g_TaggCh = HistFac.makeTH2D("IM 4g vs. TaggCh","IM(#pi^{0}#gamma#gamma) / MeV","Tagger Channel",
                                           bins_IM_Etap, BinSettings(ept->GetNChannels()),
                                           "h_IM_4g_TaggCh",true);
-
-        if(minimalMode)
-            return;
 
         h_KinFitProb = HistFac.makeTH1D("KinFitProb","p","",bins_FitProb,"h_KinFitProb");
         h_AntiPi0FitProb = HistFac.makeTH1D("AntiPi0FitProb", "log_{10} p","",bins_LogFitProb,"h_AntiPi0FitProb");
@@ -283,11 +227,13 @@ struct SigHist_t : CommonHist_t {
         const SharedTree_t& s = f.Shared;
         const Tree_t& tree = f.Tree;
 
-        h_IM_4g->Fill(tree.IM_Pi0gg, f.Weight());
-        h_IM_4g_TaggCh->Fill(tree.IM_Pi0gg, f.Common.TaggCh, f.Weight());
+        if(h_IM_4g)
+            h_IM_4g->Fill(tree.IM_Pi0gg, f.Weight());
 
-        if(minimalMode)
+        if(moreCutsLessPlots)
             return;
+
+        h_IM_4g_TaggCh->Fill(tree.IM_Pi0gg, f.Common.TaggCh, f.Weight());
 
         h_KinFitProb->Fill(s.KinFitProb, f.Weight());
         const auto get_log_prob = [this] (double prob) {
@@ -326,65 +272,111 @@ struct SigHist_t : CommonHist_t {
     }
 
     static cuttree::Cuts_t<Fill_t> GetCuts() {
+        const auto moreCutsLessPlots = opts->Get<bool>("MoreCutsLessPlots");
+
         using cuttree::MultiCut_t;
         auto cuts = cuttree::ConvertCuts<Fill_t, CommonHist_t::Fill_t>(CommonHist_t::GetCuts());
 
-
+        // anti tree fits
         {
             const auto cut = [] (double logcutval, double prob) {
                 return std::isnan(prob) || std::log10(prob)<logcutval;
             };
-            cuts.emplace_back(MultiCut_t<Fill_t>{
-                                  {"AntiPi0FitProb<10^{-5}||nan",  [cut] (const Fill_t& f) { return cut(-5, f.Shared.AntiPi0FitProb); } },
-                                  {"AntiPi0FitProb<10^{-7}||nan",  [cut] (const Fill_t& f) { return cut(-7, f.Shared.AntiPi0FitProb); } },
-                              });
-            cuts.emplace_back(MultiCut_t<Fill_t>{
-                                  {"AntiEtaFitProb<10^{-4}||nan", [cut] (const Fill_t& f) { return cut(-4, f.Shared.AntiEtaFitProb); } },
-                                  {"AntiEtaFitProb<10^{-6}||nan", [cut] (const Fill_t& f) { return cut(-6, f.Shared.AntiEtaFitProb); } },
-                              });
+
+            // anti pi0
+            MultiCut_t<Fill_t> cut_AntiPi0{
+                {"AntiPi0FitProb<10^{-5}||nan",  [cut] (const Fill_t& f) { return cut(-5, f.Shared.AntiPi0FitProb); } },
+                {"AntiPi0FitProb<10^{-7}||nan",  [cut] (const Fill_t& f) { return cut(-7, f.Shared.AntiPi0FitProb); } },
+            };
+            if(moreCutsLessPlots)
+                cut_AntiPi0.emplace_back("AntiPi0FitProb<10^{-3}||nan",  [cut] (const Fill_t& f) { return cut(-3, f.Shared.AntiPi0FitProb); });
+            cuts.emplace_back(cut_AntiPi0);
+
+            // anti eta
+            MultiCut_t<Fill_t> cut_AntiEta{
+                {"AntiEtaFitProb<10^{-4}||nan", [cut] (const Fill_t& f) { return cut(-4, f.Shared.AntiEtaFitProb); } },
+                {"AntiEtaFitProb<10^{-6}||nan", [cut] (const Fill_t& f) { return cut(-6, f.Shared.AntiEtaFitProb); } },
+            };
+            if(moreCutsLessPlots)
+                cut_AntiEta.emplace_back("AntiEtaFitProb<10^{-2}||nan", [cut] (const Fill_t& f) { return cut(-2, f.Shared.AntiEtaFitProb); });
+            cuts.emplace_back(cut_AntiEta);
         }
 
-
-        cuts.emplace_back(MultiCut_t<Fill_t>{
-                              {"TreeFitProb>0.2", [] (const Fill_t& f) { return f.Tree.TreeFitProb>0.2; } },
-                              {"TreeFitProb>0.1", [] (const Fill_t& f) { return f.Tree.TreeFitProb>0.1; } },
-                          });
-
-        auto gNonPi0_cut_1 = [] (const Fill_t& f) {
-            const auto cut = [] (const TSimpleParticle& p) {
-                const auto& theta = std_ext::radian_to_degree(p.Theta());
-                const auto& caloE = p.Ek();
-                return caloE > 230.0*(1.0-theta/160.0);
+        // tree fit cut
+        {
+            MultiCut_t<Fill_t> cut_TreeFit{
+                {"TreeFitProb>0.2", [] (const Fill_t& f) { return f.Tree.TreeFitProb>0.2; } },
+                {"TreeFitProb>0.1", [] (const Fill_t& f) { return f.Tree.TreeFitProb>0.1; } },
             };
-            return cut(f.Tree.gNonPi0()[0]) && cut(f.Tree.gNonPi0()[1]);
-        };
+            if(moreCutsLessPlots)
+                cut_TreeFit.emplace_back("TreeFitProb>0.05", [] (const Fill_t& f) { return f.Tree.TreeFitProb>0.05; });
 
-        auto gNonPi0_cut_2 = [] (const Fill_t& f) {
-            const auto cut = [] (const TSimpleParticle& p) {
+            cuts.emplace_back(cut_TreeFit);
+        }
+
+        // kinematic bachelor photon cut
+        {
+            auto gNonPi0_cut_1 = [] (const Fill_t& f) {
+                const auto cut = [] (const TSimpleParticle& p) {
+                    const auto& theta = std_ext::radian_to_degree(p.Theta());
+                    const auto& caloE = p.Ek();
+                    return caloE > 230.0*(1.0-theta/160.0);
+                };
+                return cut(f.Tree.gNonPi0()[0]) && cut(f.Tree.gNonPi0()[1]);
+            };
+
+            const auto cut_simple = [] (const TSimpleParticle& p, double factor = 1.0) {
                 const auto& theta = std_ext::radian_to_degree(p.Theta());
                 const auto& caloE = p.Ek();
                 if(theta<22) // decide if TAPS or CB
-                    return caloE > 140;
+                    return caloE > factor*140;
                 else
-                    return caloE > 60;
+                    return caloE > factor*60;
             };
-            return cut(f.Tree.gNonPi0()[0]) && cut(f.Tree.gNonPi0()[1]);
-        };
 
-        cuts.emplace_back(MultiCut_t<Fill_t>{
-                              {"gNonPi0_1", gNonPi0_cut_1},
-                              {"gNonPi0_2", gNonPi0_cut_2},
-                          });
+            auto gNonPi0_cut_2 = [cut_simple] (const Fill_t& f) {
+                return cut_simple(f.Tree.gNonPi0()[0]) && cut_simple(f.Tree.gNonPi0()[1]);
+            };
 
-        cuts.emplace_back(MultiCut_t<Fill_t>{
-                              {"CBSumVetoE<0.2", [] (const Fill_t& f) { return f.ProtonPhoton.CBSumVetoE<0.2; }},
-                              {"CBSumVetoE_gNonPi0<0.2", [] (const Fill_t& f) {
-                                   auto& v = f.Tree.gNonPi0();
-                                   return (v.front().VetoE + v.back().VetoE)<0.2;
-                               }
-                              },
-                              {"NoCBSumVetoE", [] (const Fill_t&) { return true; }},
-                          });
+            auto gNonPi0_cut_3 = [cut_simple] (const Fill_t& f) {
+                return cut_simple(f.Tree.gNonPi0()[0], 0.5) && cut_simple(f.Tree.gNonPi0()[1], 0.5);
+            };
+
+            MultiCut_t<Fill_t> cut_gNonPi0{
+                {"gNonPi0_1", gNonPi0_cut_1},
+                {"gNonPi0_2", gNonPi0_cut_2},
+                {"gNonPi0_3", gNonPi0_cut_3},
+            };
+
+            cuts.emplace_back(cut_gNonPi0);
+        }
+
+        // PID cuts
+        {
+            auto cut_gNonPi0 = [] (const Fill_t& f, double cut) {
+                auto& v = f.Tree.gNonPi0();
+                return (v.front().VetoE + v.back().VetoE)<=cut;
+            };
+
+            MultiCut_t<Fill_t> pid_cut{
+                {"CBSumVetoE_gNonPi0<0.2", [cut_gNonPi0] (const Fill_t& f) { return cut_gNonPi0(f, 0.2); }},
+            };
+
+            if(moreCutsLessPlots) {
+                // concentrate on gNonPi0 VetoE
+                pid_cut.emplace_back("CBSumVetoE_gNonPi0=0", [cut_gNonPi0] (const Fill_t& f) { return cut_gNonPi0(f, 0.0); });
+                pid_cut.emplace_back("CBSumVetoE_gNonPi0<0.1", [cut_gNonPi0] (const Fill_t& f) { return cut_gNonPi0(f, 0.1); });
+                pid_cut.emplace_back("CBSumVetoE_gNonPi0<0.4", [cut_gNonPi0] (const Fill_t& f) { return cut_gNonPi0(f, 0.4); });
+            }
+            else {
+                // some standard test cuts
+                pid_cut.emplace_back("NoCBSumVetoE", [] (const Fill_t&) { return true; });
+                pid_cut.emplace_back("CBSumVetoE<0.2", [] (const Fill_t& f) { return f.ProtonPhoton.CBSumVetoE<0.2; });
+            }
+
+
+            cuts.emplace_back(pid_cut);
+        }
         return cuts;
     }
 };
@@ -406,7 +398,7 @@ struct SigPi0Hist_t : SigHist_t {
     };
 
     SigPi0Hist_t(HistogramFactory HistFac, cuttree::TreeInfo_t treeInfo) : SigHist_t(HistFac, treeInfo) {
-        if(minimalMode)
+        if(moreCutsLessPlots)
             return;
 
         h_IM_3g_4g_high = HistFac.makeTH2D("#omega vs. #eta' IM",
@@ -417,10 +409,9 @@ struct SigPi0Hist_t : SigHist_t {
     }
 
     void Fill(const Fill_t& f) const {
-        if(minimalMode)
-            return;
-
         SigHist_t::Fill(f);
+        if(moreCutsLessPlots)
+            return;
         const Tree_t& pi0 = f.Pi0;
         h_IM_3g_4g_high->Fill(pi0.IM_Pi0gg, pi0.IM_Pi0g()[1], f.Weight());
         h_Bachelor_E->Fill(pi0.Bachelor_E()[0], f.Weight());
@@ -429,12 +420,31 @@ struct SigPi0Hist_t : SigHist_t {
     static cuttree::Cuts_t<Fill_t> GetCuts() {
         using cuttree::MultiCut_t;
         auto cuts = cuttree::ConvertCuts<Fill_t, SigHist_t::Fill_t>(SigHist_t::GetCuts());
-        cuts.emplace_back(MultiCut_t<Fill_t>{
-                              {"IM_Pi0g[1]", [] (const Fill_t& f) {
-                                   const auto& window = ParticleTypeDatabase::Omega.GetWindow(40);
-                                   return window.Contains(f.Pi0.IM_Pi0g()[1]);
-                               }},
-                          });
+        const auto moreCutsLessPlots = opts->Get<bool>("MoreCutsLessPlots");
+        if(moreCutsLessPlots) {
+            cuts.emplace_back(MultiCut_t<Fill_t>{
+                                  {"IM_Pi0g[1] 40", [] (const Fill_t& f) {
+                                       const auto& window = ParticleTypeDatabase::Omega.GetWindow(40);
+                                       return window.Contains(f.Pi0.IM_Pi0g()[1]);
+                                   }},
+                                  {"IM_Pi0g[1] 30", [] (const Fill_t& f) {
+                                       const auto& window = ParticleTypeDatabase::Omega.GetWindow(30);
+                                       return window.Contains(f.Pi0.IM_Pi0g()[1]);
+                                   }},
+                                  {"IM_Pi0g[1] 50", [] (const Fill_t& f) {
+                                       const auto& window = ParticleTypeDatabase::Omega.GetWindow(50);
+                                       return window.Contains(f.Pi0.IM_Pi0g()[1]);
+                                   }},
+                              });
+        }
+        else {
+            cuts.emplace_back(MultiCut_t<Fill_t>{
+                                  {"IM_Pi0g[1]", [] (const Fill_t& f) {
+                                       const auto& window = ParticleTypeDatabase::Omega.GetWindow(40);
+                                       return window.Contains(f.Pi0.IM_Pi0g()[1]);
+                                   }},
+                              });
+        }
         return cuts;
     }
 
@@ -465,7 +475,7 @@ struct SigOmegaPi0Hist_t : SigHist_t {
     }
 
     void Fill(const Fill_t& f) const {
-        if(minimalMode)
+        if(moreCutsLessPlots)
             return;
 
         SigHist_t::Fill(f);
@@ -552,6 +562,76 @@ struct RefHist_t : CommonHist_t {
 };
 
 OptionsPtr CommonHist_t::opts;
+
+template<typename Hist_t>
+struct MCTrue_Splitter : cuttree::StackedHists_t<Hist_t> {
+
+    const bool moreCutsLessPlots;
+
+    // Hist_t should have that type defined
+    using Fill_t = typename Hist_t::Fill_t;
+
+    MCTrue_Splitter(const HistogramFactory& histFac,
+                    const cuttree::TreeInfo_t& treeInfo) :
+        cuttree::StackedHists_t<Hist_t>(histFac, treeInfo),
+        moreCutsLessPlots(CommonHist_t::opts->Get<bool>("MoreCutsLessPlots"))
+    {
+        using histstyle::Mod_t;
+        this->GetHist(0, "Data", Mod_t::MakeDataPoints(kBlack));
+        if(!moreCutsLessPlots) {
+            this->GetHist(5, "D07", Mod_t::MakeDataPoints(kGray));
+            this->GetHist(6, "D10", Mod_t::MakeDataPoints(kGray));
+            this->GetHist(7, "D12", Mod_t::MakeDataPoints(kGray));
+        }
+
+        this->GetHist(1, "Sig",  Mod_t::MakeLine(kRed, 2.0));
+
+        if(moreCutsLessPlots)
+            return;
+
+        this->GetHist(2, "Ref",  Mod_t::MakeLine(kRed, 2.0));
+        // mctrue is never >=3 (and <9) in tree, use this to sum up all MC and all bkg MC
+        // see also Fill()
+        this->GetHist(3, "Sum_MC", Mod_t::MakeLine(kBlack, 2.0));
+        this->GetHist(4, "Bkg_MC", Mod_t::MakeFill(kGray+2));
+    }
+
+    void Fill(const Fill_t& f) {
+
+        const unsigned mctrue = f.Common.MCTrue;
+
+        auto get_bkg_name = [] (unsigned mctrue) {
+            const string& name = mctrue>=10 ?
+                        physics::EtapOmegaG::ptreeBackgrounds[mctrue-10].Name
+                    : "Other";
+            return "Bkg_"+name;
+        };
+
+        using histstyle::Mod_t;
+        const Hist_t& hist = mctrue<9 ? this->GetHist(mctrue) :
+                                        this->GetHist(mctrue,
+                                                      get_bkg_name(mctrue),
+                                                      Mod_t::MakeLine(histstyle::color_t::GetLight(mctrue-9), 1, kGray+2)
+                                                      );
+
+        hist.Fill(f);
+
+        if(moreCutsLessPlots)
+            return;
+
+        // handle MC_all and MC_bkg
+        if(mctrue>0) {
+            this->GetHist(3).Fill(f);
+            if(mctrue >= 9)
+                this->GetHist(4).Fill(f);
+        }
+
+        // handle D07/D10/D12
+        if(mctrue == 0) {
+            this->GetHist(4+f.Common.BeamTime).Fill(f);
+        }
+    }
+};
 
 struct EtapOmegaG_plot : Plotter {
 
@@ -679,7 +759,8 @@ struct EtapOmegaG_plot_Sig : EtapOmegaG_plot {
         check_entries(treeSigOmegaPi0);
 
         cuttreeSigPi0 = cuttree::Make<MCSigPi0Hist_t>(HistogramFactory("SigPi0",HistFac,"SigPi0"));
-        cuttreeSigOmegaPi0 = cuttree::Make<MCSigOmegaPi0Hist_t>(HistogramFactory("SigOmegaPi0",HistFac,"SigOmegaPi0"));
+        if(!CommonHist_t::opts->Get<bool>("MoreCutsLessPlots"))
+            cuttreeSigOmegaPi0 = cuttree::Make<MCSigOmegaPi0Hist_t>(HistogramFactory("SigOmegaPi0",HistFac,"SigOmegaPi0"));
     }
 
     virtual void ProcessEntry(const long long entry) override
@@ -689,7 +770,8 @@ struct EtapOmegaG_plot_Sig : EtapOmegaG_plot {
         treeSigPi0.Tree->GetEntry(entry);
         treeSigOmegaPi0.Tree->GetEntry(entry);
         cuttree::Fill<MCSigPi0Hist_t>(cuttreeSigPi0, {treeCommon, treeSigShared, treeSigPi0, treeMCWeighting});
-        cuttree::Fill<MCSigOmegaPi0Hist_t>(cuttreeSigOmegaPi0, {treeCommon, treeSigShared, treeSigOmegaPi0, treeMCWeighting});
+        if(cuttreeSigOmegaPi0)
+            cuttree::Fill<MCSigOmegaPi0Hist_t>(cuttreeSigOmegaPi0, {treeCommon, treeSigShared, treeSigOmegaPi0, treeMCWeighting});
     }
 };
 

@@ -1,15 +1,12 @@
 #pragma once
 
 #include "Physics.h"
+#include "analysis/input/treeEvents_t.h"
 
 #include <memory>
 #include <queue>
 
-class TTree;
-
 namespace ant {
-
-struct TAntHeader;
 
 namespace analysis {
 
@@ -41,8 +38,6 @@ protected:
     void InitReaders(readers_t readers_);
     bool TryReadEvent(input::event_t& event);
 
-    std::unique_ptr<SlowControlManager> slowcontrol_mgr;
-
     virtual void ProcessEvent(input::event_t& event, physics::manager_t& manager);
     virtual void SaveEvent(input::event_t event, const physics::manager_t& manager);
 
@@ -60,12 +55,10 @@ protected:
 
     interrupt_t interrupt;
 
-    TID firstID;
-    TID lastID;
+    interval<TID> processedTIDrange;
 
     // for output of TEvents to TTree
-    TTree*  treeEvents;
-    TEvent* treeEventPtr;
+    input::treeEvents_t treeEvents;
 
 public:
 
@@ -88,7 +81,7 @@ public:
         physics.emplace_back(std::move(pc));
     }
 
-    void SetAntHeader(TAntHeader& header);
+    const interval<TID>& GetProcessedTIDRange() const { return processedTIDrange; }
 
     void ReadFrom(std::list<std::unique_ptr<input::DataReader> > readers_,
                   long long maxevents

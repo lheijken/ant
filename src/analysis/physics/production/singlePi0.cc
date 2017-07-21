@@ -51,6 +51,32 @@ auto getTruePi0 = [] (const TParticleTree_t& tree)
     return LorentzVec(*utils::ParticleTools::FindParticle(ParticleTypeDatabase::Pi0,tree));
 };
 
+auto getTrueProton = [] (const TParticleTree_t& tree)
+{
+    return LorentzVec(*utils::ParticleTools::FindParticle(ParticleTypeDatabase::Proton,tree));
+};
+auto getTruePhotons = [] (const TParticleTree_t& tree)
+{
+    vector<LorentzVec> gammas;
+    for (const auto& g: utils::ParticleTools::FindParticles(ParticleTypeDatabase::Photon,tree))
+    {
+        gammas.emplace_back(*g);
+    }
+    return gammas;
+};
+
+
+auto getTrueGammaThetas = [] (const TParticleTree_t& tree)
+{
+    vector<double> thetas;
+    for (const auto& g: utils::ParticleTools::FindParticles(ParticleTypeDatabase::Photon,tree))
+    {
+         thetas.push_back(g->Theta());
+    }
+
+    return thetas;
+};
+
 auto getEgamma = [] (const TParticleTree_t& tree)
 {
     return tree->Get()->Ek();
@@ -107,6 +133,7 @@ singlePi0::singlePi0(const string& name, ant::OptionsPtr opts):
     {
         slowcontrol::Variables::TaggerScalers->Request();
         slowcontrol::Variables::Trigger->Request();
+        slowcontrol::Variables::TaggEff->Request();
     }
     fitterEMB.SetUncertaintyModel(flag_mc ? uncertModelMC : uncertModelData);
 
@@ -176,6 +203,7 @@ void singlePi0::ProcessEvent(const ant::TEvent& event, manager_t&)
                 seenSignal.CosThetaPi0() = cos(getPi0COMS(seenSignal.Egamma(), truePi0).Theta());
                 seenSignal.Phi()         = truePi0.Phi();
                 seenSignal.Theta()       = truePi0.Theta();
+                seenSignal.gThetas()     = getTrueGammaThetas(particleTree);
                 seenSignal.Tree->Fill();
             }
             tree.MCTrue() = phSettings.Index_Signal;
@@ -243,7 +271,7 @@ void singlePi0::ProcessEvent(const ant::TEvent& event, manager_t&)
         tree.Tagg_W()  = promptrandom.FillWeight();
 
         {
-            const auto taggEff = tagger->GetTaggEff(taggerHit.Channel);
+            const auto taggEff = slowcontrol::Variables::TaggEff->Get(taggerHit.Channel);
             tree.Tagg_Eff()      = taggEff.Value;
             tree.Tagg_EffErr()   = taggEff.Error;
         }
@@ -315,6 +343,7 @@ void singlePi0::ProcessEvent(const ant::TEvent& event, manager_t&)
             recSignal.CosThetaPi0() = seenSignal.CosThetaPi0();
             recSignal.Phi()         = seenSignal.Phi();
             recSignal.Theta()       = seenSignal.Theta();
+            recSignal.gThetas()     = seenSignal.gThetas();
 
             // write to tree:
             tree.Tree->Fill();
@@ -392,16 +421,160 @@ void singlePi0::PionProdTree::SetRaw(const utils::ProtonPhotonCombs::comb_t& sel
 
 void singlePi0::PionProdTree::SetEMB(const utils::KinFitter& kF, const APLCON::Result_t& result)
 {
-    EMB_proton()     = TSimpleParticle(*(kF.GetFittedProton()));
-    EMB_photons()    = TSimpleParticle::TransformParticleList(kF.GetFittedPhotons());
-    EMB_photonSum()  = accumulate(EMB_photons().begin(),EMB_photons().end(),TLorentzVector(0,0,0,0));
-    EMB_IM2g()       = EMB_photonSum().M();
-    EMB_Ebeam()      = kF.GetFittedBeamE();
-    EMB_iterations() = result.NIterations;
-    EMB_prob()       = result.Probability;
-    EMB_chi2()       = reducedChi2(result);
+    EMB_proton()       = TSimpleParticle(*(kF.GetFittedProton()));
+    EMB_photons()      = TSimpleParticle::TransformParticleList(kF.GetFittedPhotons());
+    EMB_photonSum()    = accumulate(EMB_photons().begin(),EMB_photons().end(),TLorentzVector(0,0,0,0));
+    EMB_IM2g()         = EMB_photonSum().M();
+    EMB_Ebeam()        = kF.GetFittedBeamE();
+    EMB_iterations()   = result.NIterations;
+    EMB_prob()         = result.Probability;
+    EMB_chi2()         = reducedChi2(result);
+    EMB_pull_p_theta() = kF.GetFitParticles().at(0).GetPulls().at(1);
+    EMB_pull_p_phi()   = kF.GetFitParticles().at(0).GetPulls().at(2);
+
+    auto fillPulls = [&kF] (const size_t pullIndex)
+    {
+        const auto& fitParticles = kF.GetFitParticles();
+        vector<double> pulls(kF.GetFittedPhotons().size());
+        transform(next(fitParticles.begin()),fitParticles.end(),
+                  pulls.begin(),
+                  [pullIndex](const utils::KinFitter::FitParticle& p)
+        {
+            return p.GetPulls().at(pullIndex);
+        } );
+        return pulls;
+    };
+    EMB_pull_g_thetas() = fillPulls(1);
+    EMB_pull_g_phis()   = fillPulls(2);
 }
 
 
 
+
+
+singlePi0MCTrue::singlePi0MCTrue(const string& name, OptionsPtr opts):
+    Physics(name,opts)
+{
+    const BinSettings cosBins    = BinSettings(100, -1 , 1);
+    const BinSettings pAngleBins = BinSettings(100,0,90);
+    const BinSettings gAngleBins = BinSettings(100,0,180);
+
+    const string cosThetaPi0COMS = "cos(#theta^{#pi^{0}}_{cms})";
+    const string thetaPLab       = "#theta^{p}_{lab} [#circ]";
+    const string thetaGLab       = "#theta^{#gamma}_{lab} [#circ]";
+
+    theta_p_labVStheta_pi0_coms = HistFac.makeTH2D("Proton angle dependence", cosThetaPi0COMS, thetaPLab,
+                                                   cosBins, pAngleBins,
+                                                   "pvspicoms");
+    theta_g_labVStheta_pi0_coms = HistFac.makeTH2D("Photons angle dependence", cosThetaPi0COMS, thetaGLab,
+                                                   cosBins, gAngleBins,
+                                                   "gammavspicoms");
+
+    theta_p_labVStheta_pi0_coms_hits = HistFac.makeTH2D("Proton angle dependence detector hits", cosThetaPi0COMS, thetaPLab,
+                                                   cosBins, pAngleBins,
+                                                   "pvspicoms_h");
+    theta_g_labVStheta_pi0_coms_hits = HistFac.makeTH2D("Photons angle dependence detector hits", cosThetaPi0COMS, thetaGLab,
+                                                   cosBins, gAngleBins,
+                                                   "gammavspicoms_h");
+
+    theta_g = HistFac.makeTH1D("Photons",thetaGLab,"#",
+                               gAngleBins,
+                               "gTheta");
+    theta_p = HistFac.makeTH1D("Protons",thetaPLab,"#",
+                               pAngleBins,
+                               "pTheta");
+
+    tree.CreateBranches(HistFac.makeTTree("tree"));
+}
+
+void singlePi0MCTrue::ProcessEvent(const TEvent& event, manager_t&)
+{
+    auto& ptree = event.MCTrue().ParticleTree;
+    if(!ptree)
+        return;
+    ParticleTypeTreeDatabase::Channel channel;
+    if(!utils::ParticleTools::TryFindParticleDatabaseChannel(ptree, channel)) {
+        LOG_N_TIMES(100, WARNING) << "Cannot find " << utils::ParticleTools::GetDecayString(ptree, false) << " in database (max 100x printed)";
+        return;
+    }
+    if(channel != ParticleTypeTreeDatabase::Channel::Pi0_2g) {
+        LOG_N_TIMES(100, WARNING) << "Wrong decay in MC file" << utils::ParticleTools::GetDecayString(ptree, false) << ", shoule be  single Pi0 production. (max 100x printed)";
+        return;
+    }
+
+    const auto pi0    = getTruePi0(ptree);
+    const auto proton = getTrueProton(ptree);
+    const auto egamma = getEgamma(ptree);
+    const auto gammas = getTruePhotons(ptree);
+
+    tree.p_lab() = proton;
+    tree.theta_pi0_coms = cos(getPi0COMS(egamma, pi0).Theta());
+
+    transform(gammas.begin(),gammas.end(), tree.gamma_lab().begin(),
+              [] (const LorentzVec& g) { return g;});
+
+    tree.Tree->Fill();
+}
+
+void singlePi0MCTrue::Finish()
+{
+    ant::analysis::utils::A2SimpleGeometry geometry;
+
+    auto getHitID = [&geometry](const LorentzVec& dir)
+    {
+        if (geometry.DetectorFromAngles(dir.Theta(),dir.Phi()) == Detector_t::Type_t::CB)
+            return 100;
+        if (geometry.DetectorFromAngles(dir.Theta(),dir.Phi()) == Detector_t::Type_t::TAPS)
+            return 100000;
+        return 0;
+    };
+
+    auto fillHists = [&getHitID] (TH2D* hist, TH2D* histHit,  TH1D* proj,
+            const double cosTheta, const LorentzVec& particle)
+    {
+        const auto hitID = getHitID(particle);
+        const auto thetaP    = std_ext::radian_to_degree(particle.Theta());
+
+//        if (hitID != 0)
+        {
+            hist->Fill(cosTheta, thetaP);
+            histHit->SetBinContent(histHit->FindBin(cosTheta,thetaP),
+                                   hitID);
+            proj->Fill(thetaP);
+        }
+    };
+
+    for ( long long en = 0 ; en < tree.Tree->GetEntries() ; en ++)
+    {
+        tree.Tree->GetEntry(en);
+        const auto cthetaPi0 = tree.theta_pi0_coms();
+
+        fillHists(theta_p_labVStheta_pi0_coms,
+                  theta_p_labVStheta_pi0_coms_hits,
+                  theta_p,
+                  cthetaPi0, tree.p_lab());
+
+        for (const auto& t: tree.gamma_lab())
+        {
+            fillHists(theta_g_labVStheta_pi0_coms,
+                      theta_g_labVStheta_pi0_coms_hits,
+                      theta_g,
+                      cthetaPi0, t);
+        }
+    }
+}
+
+void singlePi0MCTrue::ShowResult()
+{
+
+    canvas("plot1")
+            << drawoption("col") << theta_p_labVStheta_pi0_coms_hits  << theta_g_labVStheta_pi0_coms_hits
+            << drawoption("colz") << theta_p_labVStheta_pi0_coms  << theta_g_labVStheta_pi0_coms
+            << endc;
+    canvas("plot2")
+            << theta_p << theta_g
+            << endc;
+}
+
 AUTO_REGISTER_PHYSICS(singlePi0)
+AUTO_REGISTER_PHYSICS(singlePi0MCTrue)

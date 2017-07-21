@@ -19,6 +19,8 @@ set(SRCS_SETUPS
   setups/Setup_2007_06.cc
   setups/Setup_2007_07.cc
   setups/Setup_2017_03.cc
+  setups/Setup_2010_03_Base.cc
+  setups/Setup_2010_09_Compton.cc
   setups/Setup_2017_05.cc
   )
 
@@ -33,15 +35,21 @@ set(SRCS_DETECTORS
   detectors/Cherenkov.h
   detectors/detail/EPT_2014_elements.h
   detectors/detail/Tagger_2007_1508_elements.h
+  detectors/detail/Tagger_2010_03_450_elements.h
   detectors/detail/Tagger_2015_450_elements.h
   detectors/detail/CB_elements.h
   detectors/detail/TAPS_2007_BaF2_elements.h
-  detectors/detail/TAPS_2013_BaF2_elements.h
-  detectors/detail/TAPS_2013_PbWO4_elements.h
+  detectors/detail/TAPS_2009_03_BaF2_elements.h
+  detectors/detail/TAPS_2009_03_PbWO4_elements.h
+  detectors/detail/TAPS_2013_11_BaF2_elements.h
+  detectors/detail/TAPS_2013_11_PbWO4_elements.h
   detectors/detail/TAPSVeto_2007_BaF2_elements.h
-  detectors/detail/TAPSVeto_2013_PbWO4_elements.h
-  detectors/detail/TAPSVeto_2013_BaF2_elements.h
+  detectors/detail/TAPSVeto_2009_03_BaF2_elements.h
+  detectors/detail/TAPSVeto_2009_03_PbWO4_elements.h
+  detectors/detail/TAPSVeto_2013_11_BaF2_elements.h
+  detectors/detail/TAPSVeto_2013_11_PbWO4_elements.h
   detectors/detail/TAPSVeto_2014_BaF2_elements.h
+  detectors/detail/TAPSVeto_2014_PbWO4_elements.h
   detectors/detail/PID_2004_elements.h
   detectors/detail/PID_2007_elements.h
   detectors/detail/PID_2009_05_elements.h

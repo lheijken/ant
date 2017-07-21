@@ -16,14 +16,6 @@ struct Tagger :
     virtual double GetPhotonEnergy(unsigned channel) const override {
         return BeamEnergy - elements[channel].ElectronEnergy;
     }
-    virtual ant::TaggerDetector_t::taggeff_t GetTaggEff(unsigned channel) const override
-    {
-        return elements.at(channel).TaggEff;
-    }
-    virtual void SetTaggEff(unsigned channel, const ant::TaggerDetector_t::taggeff_t& taggeff) override
-    {
-        elements.at(channel).TaggEff = taggeff;
-    }
     virtual double GetPhotonEnergyWidth(unsigned) const override {
         return 3.2; /// \todo Find better approximation for tagger here!
     }
@@ -84,6 +76,13 @@ protected:
 struct Tagger_2007 : Tagger {
     Tagger_2007() :
         Tagger(1508.0, elements_init)
+    {}
+    static const std::vector<Element_t> elements_init;
+};
+
+struct Tagger_2010_03 : Tagger {
+    Tagger_2010_03() :
+        Tagger(450.0, elements_init)
     {}
     static const std::vector<Element_t> elements_init;
 };

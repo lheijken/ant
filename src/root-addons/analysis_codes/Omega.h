@@ -6,8 +6,11 @@ class TH1D;
 class TH2;
 class TH2D;
 class TF1;
+class TCanvas;
 
 namespace ant {
+class hstack;
+
 class Omega {
 
 public:
@@ -46,6 +49,19 @@ public:
     static TH2D* SampleDiffXsectionPi0();
 
     static TH1D* getSignalYield(const std::string& meson = "eta");
+
+    static void SaveStacks(const std::string& path_spec, const std::string &fname, const int start=0, const int stop=9);
+
+    static void PlotFitted(const std::string& file);
+
+    static TH2D* ConvertMesonCountHistToCrossSec(const TH2D* mesonCounts);
+
+    static TCanvas* Printhstack(const std::string& name);
+    static TCanvas* Printhstack(ant::hstack* hs);
+
+    static void RoundBins(TH2* h, int d);
+
+    static TH1D* HistOfBins(const TH2* h2);
 };
 
 }

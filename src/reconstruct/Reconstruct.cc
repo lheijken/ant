@@ -21,20 +21,24 @@ using namespace std;
 using namespace ant;
 using namespace ant::reconstruct;
 
-using DefaultClustering = Clustering_NextGen;
-using DefaultCandidateBuilder = CandidateBuilder;
-Reconstruct::Reconstruct() :
-    Reconstruct(
-        std_ext::make_unique<DefaultClustering>(),
-        std_ext::make_unique<DefaultCandidateBuilder>()
-        )
-{}
-Reconstruct::Reconstruct(clustering_t clustering_) :
-    Reconstruct(move(clustering_), std_ext::make_unique<DefaultCandidateBuilder>())
-{}
-Reconstruct::Reconstruct(candidatebuilder_t candidatebuilder_) :
-    Reconstruct(std_ext::make_unique<DefaultClustering>(), move(candidatebuilder_))
-{}
+Reconstruct::clustering_t Reconstruct::GetDefaultClustering()
+{
+    return std_ext::make_unique<Clustering_NextGen>();
+}
+
+Reconstruct::candidatebuilder_t Reconstruct::GetDefaultCandidateBuilder()
+{
+    /// \todo instead of using the full-blown CandidateBuilder here,
+    /// it would be better to compose it out of smaller parts
+    /// this might get important if using the MWPCs...
+    try {
+        return std_ext::make_unique<CandidateBuilder>();
+    }
+    catch(ExpConfig::ExceptionNoDetector e) {
+        LOG(WARNING) << "Candidate builder could not be activated: " << e.what();
+    }
+    return nullptr;
+}
 
 template<typename List>
 List getSortedHooks() {
@@ -113,9 +117,19 @@ void Reconstruct::DoReconstruct(TEventData& reconstructed) const
         hook->ApplyTo(sorted_clusters);
     }
 
-    // do the candidate building
-    candidatebuilder->Build(move(sorted_clusters),
-                            reconstructed.Candidates, reconstructed.Clusters);
+    // do the candidate building (if available)
+    if(candidatebuilder) {
+        candidatebuilder->Build(move(sorted_clusters),
+                                reconstructed.Candidates, reconstructed.Clusters);
+    }
+    else {
+        /// \todo it would be better if a seperate "simple" candidatebuilder was used here
+        for(auto& det_entry : sorted_clusters) {
+            auto& clusters = det_entry.second;
+            for(auto it_cluster = clusters.begin(); it_cluster != clusters.end(); ++it_cluster)
+                reconstructed.Clusters.push_back(it_cluster);
+        }
+    }
 
     // apply hooks which may modify the whole event
     for(const auto& hook : hooks_eventdata) {
@@ -285,8 +299,9 @@ void Reconstruct::BuildClusters(
 
         // check if detector supports clustering
         if(detector.ClusterDetector != nullptr) {
-            // yes, then hand over to clustering algorithm
-            clustering->Build(*detector.ClusterDetector, clusterhits, clusters);
+            // yes, then hand over to clustering algorithm (if available)
+            if(clustering)
+                clustering->Build(*detector.ClusterDetector, clusterhits, clusters);
         }
         else {
             // in case of no clustering detector,
