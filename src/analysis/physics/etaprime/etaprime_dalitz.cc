@@ -254,6 +254,8 @@ EtapDalitz::EtapDalitz(const string& name, OptionsPtr opts) :
     h_IM2d = HistFac.makeTH2D("IM(e+e-) vs IM(e+e-g)", "IM(e+e-g) [MeV]", "IM(e+e-) [MeV]", BinSettings(1200), BinSettings(1200), "h_IM2d");
     h_etap = HistFac.makeTH2D("Kinematics #eta'", "Energy [MeV]", "#vartheta [#circ]", BinSettings(1200), BinSettings(360, 0, 180), "h_etap");
     h_proton = HistFac.makeTH2D("Kinematics p", "Energy [MeV]", "#vartheta [#circ]", BinSettings(1200), BinSettings(160, 0, 80), "h_proton");
+    h_subIM_2g = HistFac.makeTH1D("#pi^{0} Candidate sub IM 2#gamma", "IM [MeV]", "#", BinSettings(1600, 0, 400), "h_subIM_2g");
+    h_subIM_2g_fit = HistFac.makeTH1D("#pi^{0} Candidate sub IM 2#gamma after KinFit", "IM [MeV]", "#", BinSettings(1600, 0, 400), "h_subIM_2g_fit");
 
     // set sigma to 0 for unmeasured --> free z vertex
     kinfit_freeZ.SetZVertexSigma(0);
@@ -292,33 +294,11 @@ void EtapDalitz::ProcessEvent(const TEvent& event, manager_t&)
     } else
         found_channels->Fill(sig.channel);
 
-    std::string production = "data";
-    std::string decaystring = "data";
-    std::string decay_name = "data";
-    if (MC) {
-        production = std_ext::string_sanitize(utils::ParticleTools::GetProductionChannelString(event.MCTrue().ParticleTree).c_str());
-        remove_chars(production, {'#', '{', '}', '^'});
-        decaystring = std_ext::string_sanitize(utils::ParticleTools::GetDecayString(event.MCTrue().ParticleTree).c_str());
-        decay_name = decaystring;
-        remove_chars(decay_name, {'#', '{', '}', '^'});
-    }
+    // identify the currently processed channel
+    channel_id(MC, event);
 
-    auto prod = productions.find(production);
-    if (prod == productions.end()) {
-        auto hf = new HistogramFactory(production, HistFac, "");
-        productions.insert({production, *hf});
-    }
-    prod = productions.find(production);
-    auto hf = prod->second;
-
-    auto c = channels.find(decaystring);
-    if (c == channels.end())
-        channels.insert({decaystring, PerChannel_t(decay_name, decaystring, hf)});
-
-    c = channels.find(decaystring);
-    if (MC)
-        c->second.Fill(event.MCTrue());
-    auto h = c->second;
+    // manage histogram structure for different channels, get histograms for current channel
+    auto h = manage_channel_histograms_get_current(MC, event);
 
     const auto& cands = data.Candidates;
     //const auto nCandidates = cands.size();
@@ -329,8 +309,9 @@ void EtapDalitz::ProcessEvent(const TEvent& event, manager_t&)
     // histogram amount of CB and TAPS clusters
     count_clusters(cands);
 
-    if(!triggersimu.HasTriggered())
+    if (!triggersimu.HasTriggered())
         return;
+    h.steps->Fill("triggered", 1);
 
     sig.CBSumE = triggersimu.GetCBEnergySum();
 
@@ -375,21 +356,12 @@ void EtapDalitz::ProcessEvent(const TEvent& event, manager_t&)
     }
 
     TLorentzVector etap;
-    TParticlePtr proton;
     //const interval<double> etap_im({ETAP_IM-ETAP_SIGMA, ETAP_IM+ETAP_SIGMA});
-    TCandidatePtrList comb;
-    for (auto p : cands.get_iter())
-        comb.emplace_back(p);
+
+    utils::ProtonPhotonCombs proton_photons(cands);
 
 
-    // require at least 2 candidates with PID/Veto entries
-    if (std::count_if(comb.begin(), comb.end(), [](TCandidatePtr c){ return c->VetoEnergy; }) < 2)
-        return;
-    h.steps->Fill("#Veto", 1);
-
-    TParticleList photons;
     double best_prob_fit = -std_ext::inf;
-    size_t best_comb_fit = cands.size();
     // set fitter defaults in tree
     sig.kinfit_chi2 = std_ext::NaN;
     sig.kinfit_probability = std_ext::NaN;
@@ -402,7 +374,7 @@ void EtapDalitz::ProcessEvent(const TEvent& event, manager_t&)
     for (const TTaggerHit& taggerhit : data.TaggerHits) {  // loop over all tagger hits
         if (!MC) {
             h_tagger_time->Fill(taggerhit.Time);
-            h_tagger_time_CBavg->Fill(taggerhit.Time - sig.CBAvgTime);
+            h_tagger_time_CBavg->Fill(triggersimu.GetCorrectedTaggerTime(taggerhit));
         }
 
         promptrandom.SetTaggerTime(triggersimu.GetCorrectedTaggerTime(taggerhit));
@@ -415,57 +387,66 @@ void EtapDalitz::ProcessEvent(const TEvent& event, manager_t&)
         sig.TaggT = taggerhit.Time;
         sig.TaggCh = taggerhit.Channel;
 
+        particle_combs_t selection = proton_photons()
+                .Observe([h] (const std::string& s) { h.steps->Fill(s.c_str(), 1.); }, "[S] ")
+                .FilterMult(3, 100.)  // require 3 photons and allow discarded energy of 100 MeV
+                //.FilterMM(taggerhit, ParticleTypeDatabase::Proton.GetWindow(350).Round())  // MM cut on proton mass, 350 MeV window
+                .FilterCustom([] (const particle_comb_t& p) {
+                    // ensure the possible proton candidate is kinematically allowed
+                    if (std_ext::radian_to_degree(p.Proton->Theta()) > 90.)
+                        return true;
+                    return false;
+                }, "proton #vartheta")
+                .FilterCustom([] (const particle_comb_t& p) {
+                    // require 2 PID entries for the eta' candidate
+                    if (std::count_if(p.Photons.begin(), p.Photons.end(),
+                                      [](TParticlePtr g){ return g->Candidate->VetoEnergy; }) < 2)
+                        return true;
+                    return false;
+                }, "2 PIDs");
+
+        if (selection.empty())
+            continue;
+        h.steps->Fill("Selection", 1);
+
         // find best combination for each Tagger hit
         best_prob_fit = -std_ext::inf;
-        best_comb_fit = cands.size();
+        vector<double> IM_2g(3, std_ext::NaN);
+        vector<double> IM_2g_fit(3, std_ext::NaN);
 
-        for (size_t i = 0; i < cands.size(); i++) {  // loop to test all different combinations
-            // ensure the possible proton candidate is kinematically allowed
-            if (std_ext::radian_to_degree(comb.back()->Theta) > 90.) {
-                shift_right(comb);
-                continue;
-            }
-            h.steps->Fill("proton #vartheta", 1);
-
-            // require 2 PID entries for the eta candidate
-            if (std::count_if(comb.begin(), comb.end()-1, [](TCandidatePtr c){ return c->VetoEnergy; }) < 2) {
-                shift_right(comb);
-                continue;
-            }
-            h.steps->Fill("2 PIDs", 1);
-
-            photons.clear();
-            proton = make_shared<TParticle>(ParticleTypeDatabase::Proton, comb.back());
+        for (const auto& cand : selection) {
             etap.SetXYZT(0,0,0,0);
-            for (size_t j = 0; j < comb.size()-1; j++) {
-                photons.emplace_back(make_shared<TParticle>(ParticleTypeDatabase::Photon, comb.at(j)));
-                etap += TParticle(ParticleTypeDatabase::Photon, comb.at(j));
-            }
+            for (const auto& g : cand.Photons)
+                etap += *g;
             h.etapIM->Fill(etap.M(), sig.TaggW);
 
             // do the fitting and check if the combination is better than the previous best
-            if (!doFit_checkProb(taggerhit, proton, photons, h, sig, best_prob_fit)) {
-                shift_right(comb);
+            if (!doFit_checkProb(taggerhit, cand.Proton, cand.Photons, h, sig, best_prob_fit))
                 continue;
-            }
 
-            best_comb_fit = i;
+            sig.DiscardedEk = cand.DiscardedEk;
 
-            shift_right(comb);
+            utils::ParticleTools::FillIMCombinations(IM_2g.begin(), 2, cand.Photons);
+            utils::ParticleTools::FillIMCombinations(IM_2g_fit.begin(), 2, sig.photons_kinfitted());
         }
 
         // only fill tree if a valid combination for the current Tagger hit was found
-        if (best_comb_fit >= cands.size() || !isfinite(best_prob_fit))
+        if (!isfinite(best_prob_fit))
             continue;
+
+        for (const auto& im : IM_2g)
+            h_subIM_2g->Fill(im, sig.TaggW);
+        for (const auto& im : IM_2g_fit)
+            h_subIM_2g_fit->Fill(im, sig.TaggW);
 
         sig.Tree->Fill();
         h.steps->Fill("Tree filled", 1);
     }
 
-    if (best_comb_fit >= cands.size() || !isfinite(best_prob_fit))
+    if (!isfinite(best_prob_fit))
         return;
     h.steps->Fill("best comb", 1);
-
+/*
     // restore combinations with best chi2
     //for (size_t i = 0; i < best_comb_fit; i++)
     while (best_comb_fit-- > 0)
@@ -502,7 +483,7 @@ void EtapDalitz::ProcessEvent(const TEvent& event, manager_t&)
     h_protonVeto->Fill(comb.back()->VetoEnergy);
     h_pTheta->Fill(std_ext::radian_to_degree(comb.back()->Theta));
 
-    // at this point a possible eta Dalitz candidate was found, work only with eta final state
+    // at this point a possible eta' Dalitz candidate was found, work only with eta' final state
     comb.pop_back();
 
     const TCandidatePtr& l1 = comb.at(0);
@@ -546,7 +527,7 @@ void EtapDalitz::ProcessEvent(const TEvent& event, manager_t&)
     h.etapIM_final->Fill(etap.M());
     h_etapIM_final->Fill(etap.M());
     h.hCopl_final->Fill(std_ext::radian_to_degree(abs(etap.Phi() - proton->Phi())) - 180.);
-
+*/
     h_counts->Fill(decaystring.c_str(), 1);
 }
 
@@ -908,6 +889,47 @@ void EtapDalitz::count_clusters(const TCandidateList& cands)
             nTAPS++;
     h_cluster_CB->Fill(nCB);
     h_cluster_TAPS->Fill(nTAPS);
+}
+
+void EtapDalitz::channel_id(const bool MC, const TEvent& event)
+{
+    // assume data by default
+    production = "data";
+    decaystring = "data";
+    decay_name = "data";
+
+    // get MC true channel information
+    if (MC) {
+        production = std_ext::string_sanitize(utils::ParticleTools::GetProductionChannelString(event.MCTrue().ParticleTree).c_str());
+        remove_chars(production, {'#', '{', '}', '^'});
+        decaystring = std_ext::string_sanitize(utils::ParticleTools::GetDecayString(event.MCTrue().ParticleTree).c_str());
+        decay_name = decaystring;
+        remove_chars(decay_name, {'#', '{', '}', '^'});
+    }
+}
+
+EtapDalitz::PerChannel_t EtapDalitz::manage_channel_histograms_get_current(const bool MC, const TEvent& event)
+{
+    // check if the current production is known already, create new HistogramFactory otherwise
+    auto prod = productions.find(production);
+    if (prod == productions.end()) {
+        auto hf = new HistogramFactory(production, HistFac, "");
+        productions.insert({production, *hf});
+    }
+    prod = productions.find(production);
+    auto hf = prod->second;
+
+    // check if the decay channel is known already, if not insert it
+    auto c = channels.find(decaystring);
+    if (c == channels.end())
+        channels.insert({decaystring, PerChannel_t(decay_name, decaystring, hf)});
+
+    c = channels.find(decaystring);
+    if (MC)
+        c->second.Fill(event.MCTrue());
+
+    // return the histogram struct for the current channel
+    return c->second;
 }
 
 bool EtapDalitz::q2_preselection(const TEventData& data, const double threshold = 50.) const

@@ -4,6 +4,8 @@
 #include <functional>
 #include <cmath>
 #include <cxxabi.h>
+#include <type_traits>
+#include <memory>
 
 namespace ant {
 namespace std_ext {
@@ -36,6 +38,46 @@ template<typename T>
 std::string getTypeAsString() {
   return abi::__cxa_demangle(typeid(T).name(), nullptr, nullptr, nullptr);
 }
+
+template<class...>
+using void_t = void;
+
+// workaround for some compilers:
+// template<class...> struct voider { using type = void; };
+// template<class... Args> using void_t = typename voider<Args...>::type;
+
+template<class T, class = void>
+struct has_element_type {
+    static constexpr auto value = false;
+};
+
+template<class T>
+struct has_element_type<T, void_t<typename T::element_type>> {
+    static constexpr auto value = true;
+};
+
+template<typename T>
+typename std::remove_pointer<T>::type
+dereference(T* t)
+{
+    return *t;
+}
+
+template<typename T>
+typename std::enable_if<!has_element_type<T>::value, T&>::type
+dereference(T& t)
+{
+    return t;
+}
+
+// element_type is provided by smart pointers unique_ptr, shared_ptr
+template<typename T>
+typename std::enable_if<has_element_type<T>::value, typename T::element_type&>::type
+dereference(const T& t)
+{
+    return *t;
+}
+
 
 class execute_on_destroy {
     std::function<void(void)> fct;

@@ -12,6 +12,7 @@
 #include "analysis/utils/ClusterTools.h"
 #include "analysis/plot/PromptRandomHist.h"
 #include "analysis/utils/TriggerSimulation.h"
+#include "utils/ProtonPhotonCombs.h"
 #include "base/WrapTTree.h"
 
 #include "root-addons/cbtaps_display/TH2CB.h"
@@ -118,6 +119,7 @@ public:
 
         ADD_BRANCH_T(double,                      p_effect_radius)
         ADD_BRANCH_T(double,                      p_lat_moment)
+        ADD_BRANCH_T(double,                      DiscardedEk)
 
         ADD_BRANCH_T(TLorentzVector,              p_kinfit_freeZ)
         ADD_BRANCH_T(TLorentzVector,              p_treefit_freeZ)
@@ -178,6 +180,8 @@ protected:
     TH2D* h_IM2d = nullptr;
     TH2* h_etap = nullptr;
     TH2* h_proton = nullptr;
+    TH1D* h_subIM_2g = nullptr;
+    TH1D* h_subIM_2g_fit = nullptr;
 
     TH1D* h_counts = nullptr;
     TH1D* h_nCands = nullptr;
@@ -252,6 +256,11 @@ protected:
         void Fill(const TEventData& d);
     };
 
+    // identifier for current channel information
+    std::string production;
+    std::string decaystring;
+    std::string decay_name;
+
     std::map<std::string, PerChannel_t> channels;
     std::map<std::string, HistogramFactory&> productions;
 
@@ -271,6 +280,9 @@ protected:
 
     utils::ClusterTools clustertools;
 
+    using particle_comb_t = utils::ProtonPhotonCombs::comb_t;
+    using particle_combs_t = utils::ProtonPhotonCombs::Combinations_t;
+
     std::shared_ptr<ant::Detector_t> cb;
 
     template <typename iter>
@@ -284,6 +296,9 @@ protected:
 
     ParticleTypeTree base_tree();
     ParticleTypeTree etap_3g();
+
+    void channel_id(const bool, const TEvent&);
+    PerChannel_t manage_channel_histograms_get_current(const bool, const TEvent&);
 
     void count_clusters(const TCandidateList&);
     bool q2_preselection(const TEventData&, const double) const;
