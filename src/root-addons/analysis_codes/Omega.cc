@@ -869,7 +869,7 @@ void Omega::PlotFitted(const string &file)
 
     canvas s("Sigma");
 
-    int i=0;
+//    int i=0;
     for(auto& e : graphs) {
         const auto w = math::W(e.first, ParticleTypeDatabase::Proton);
 
@@ -905,7 +905,7 @@ void Omega::PlotFitted(const string &file)
         drawif(saphirGraph);
 
         save_c->BuildLegend(0.175,0.5,0.6,0.75);
-        save_c->SaveMultiImages(Form("cross_Sec_%d", i++));
+//        save_c->SaveMultiImages(Form("cross_Sec_%d", i++));
     }
     s << endc;
 

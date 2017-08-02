@@ -25,16 +25,32 @@ using namespace ant::analysis;
 using namespace ant::analysis::physics;
 
 scratch_lheijken_gppi0p::scratch_lheijken_gppi0p(const std::string& name, OptionsPtr opts):
-    Physics(name, opts)
+    Physics(name, opts),
+    promptrandom(ExpConfig::Setup::Get())
 {
-    const BinSettings ETGBins(100,0.,1000.);
+    const BinSettings ETGBins(100,0.,500.);
     TrueGammaE   = HistFac.makeTH1D("energies of true gammas","E_{#gamma}","",ETGBins,"TrueGammaE");
     TrueGammaIM  = HistFac.makeTH1D("IM of true gammas","m_{#gamma#gamma}","",ETGBins, "TrueGammasIM");
+    RecMesIM = HistFac.makeTH1D("IM of rec meson","m_{#pi^0}","",ETGBins, "RecMesIM");
+    steps.CreateBranches(HistFac.makeTTree("analysis_cuts"));
 }
 
 
 void scratch_lheijken_gppi0p::ProcessEvent(const TEvent& event, manager_t&)
 {
+    triggersimu.ProcessEvent(event);
+
+    // Check the decay string for MC
+    // ******************************
+    bool signal  = false;
+    string decay;
+    if(event.Reconstructed().ID.isSet(ant::TID::Flags_t::MC))
+            decay = utils::ParticleTools::GetDecayString(event.MCTrue().ParticleTree);
+    else    decay = "data" + ExpConfig::Setup::Get().GetName();
+    if(decay == "(#gamma p) #rightarrow #pi^{0} [ #gamma #gamma ] p ") signal = true;
+
+    steps.AddStep(signal, "All events");
+
     // MC true stuff
     if(event.Reconstructed().ID.isSet(ant::TID::Flags_t::MC)){
         // Fetches a list of all gammas in the MCTrue tree
@@ -46,7 +62,7 @@ void scratch_lheijken_gppi0p::ProcessEvent(const TEvent& event, manager_t&)
     }
 
 
-/*
+
     // Get full list of particles, create neutral/charged list
     // *******************************************************
     const auto& candidates = event.Reconstructed().Candidates;
@@ -57,8 +73,6 @@ void scratch_lheijken_gppi0p::ProcessEvent(const TEvent& event, manager_t&)
         if(cand->VetoEnergy == 0.0) neutral.emplace_back(cand);
         else charged.emplace_back(cand);
     }
-
-
 
     // ===================================================================
     // Basic event selection
@@ -84,6 +98,7 @@ void scratch_lheijken_gppi0p::ProcessEvent(const TEvent& event, manager_t&)
         Meson_time+=photon->Time;
     }
     Meson_time = Meson_time / neutral.size(); // Avg the meson time
+    RecMesIM->Fill(Meson.M());
 
 
     // Loop over the Tagger hits
@@ -113,15 +128,15 @@ void scratch_lheijken_gppi0p::ProcessEvent(const TEvent& event, manager_t&)
 
         // ===================================================================
 
-        promptrandom.SetTaggerTime(triggersimu.GetCorrectedTaggerTime(tc));
+        promptrandom.SetTaggerTime(triggersimu.GetCorrectedTaggerTime(tc)); // - vad hander har?
 
-        detection_efficiency.AcceptEvent(Meson,Meson_time, tc,promptrandom);
-        cross_section.AcceptEvent(Meson,Meson_time,tc,promptrandom);
+//        detection_efficiency.AcceptEvent(Meson,Meson_time, tc,promptrandom);
+//        cross_section.AcceptEvent(Meson,Meson_time,tc,promptrandom);
 
         i++;
     }
 
-*/
+
 }
 
 void scratch_lheijken_gppi0p::Finish()
