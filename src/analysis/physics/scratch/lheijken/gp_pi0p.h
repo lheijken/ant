@@ -37,12 +37,15 @@ protected:
     steps_t steps;
     PromptRandom::Switch promptrandom;
     utils::TriggerSimulation triggersimu;
-    TH1D* TrueGammaE = nullptr;
-    TH1D* TrueGammaIM = nullptr;
-    TH1D* RecMesIM = nullptr;
+    TH1D *hTrueGammaE = nullptr;
+    TH1D *hTrueGammaIM = nullptr;
+    TH1D *hRecMesIMN1 = nullptr, *hRecMesIMN2 = nullptr;
+    TH1D *hRecMesIMN3 = nullptr, *hRecMesIMPCut = nullptr, *hRecMesIMPCut2 = nullptr;
+    TH1D *hMMMeson, *hCoplMesProt;
 
 protected:
     static constexpr auto radtodeg = std_ext::radian_to_degree(1.0);
+    void CreateHistos();
 
 public:
     scratch_lheijken_gppi0p(const std::string& name, OptionsPtr opts);
