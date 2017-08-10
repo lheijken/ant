@@ -202,6 +202,7 @@ void Time::TheGUI::StartSlice(const interval<TID>& range)
     previousOffsets = offsets;
 }
 
+// Is called only when first opening a new channel.
 gui::CalibModule_traits::DoFitReturn_t Time::TheGUI::DoFit(const TH1& hist, unsigned channel)
 {
     if (detector->IsIgnored(channel))

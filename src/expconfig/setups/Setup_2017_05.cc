@@ -100,7 +100,7 @@ Setup_2017_05::Setup_2017_05(const string& name, OptionsPtr opt) :
                                       calibrationDataManager,
                                       convert_CATCH_Tagger,
                                       -325, // default offset in ns
-                                      std::make_shared<calibration::gui::FitGausPol0>(),
+                                      std::make_shared<calibration::gui::FitGausPol0ParLimits>(),
                                       timecuts ? interval<double>{-120, 120} : no_timecut
                                       );
     AddCalibration<calibration::Time>(CB,

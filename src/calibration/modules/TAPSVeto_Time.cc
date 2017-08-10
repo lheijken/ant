@@ -45,5 +45,7 @@ TAPSVeto_Time::TAPSVeto_Time(std::shared_ptr<expconfig::detector::TAPSVeto> taps
 
 std::shared_ptr<gui::PeakingFitFunction> TAPSVeto_Time::getDefaultFitFct()
 {
-    return make_shared<calibration::gui::FitGausPol0>();
+    //return make_shared<calibration::gui::FitGausPol0>();
+    return make_shared<calibration::gui::FitGaus>();
+
 }
