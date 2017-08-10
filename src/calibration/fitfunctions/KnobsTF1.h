@@ -114,6 +114,25 @@ public:
 
 };
 
+class ParLimitKnob : public IndicatorKnob {
+public:
+    enum class LimitEndType {
+        upper,
+        lower
+    };
+protected:
+    TF1* func = nullptr;
+    const int parameter_index = 0;
+    const LimitEndType limtype;
+public:
+
+    ParLimitKnob(const std::string& Name, TF1* Func, int par, LimitEndType LimType, IndicatorProperties::Type_t type, Color_t color=kBlack, double LineW=1);
+
+    virtual double get() const override;
+    virtual void set(double a) override;
+
+};
+
 }
 }
 }

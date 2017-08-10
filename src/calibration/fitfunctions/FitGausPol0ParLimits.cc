@@ -29,6 +29,7 @@ FitGausPol0ParLimits::FitGausPol0ParLimits()
     AddKnob<KnobsTF1::ParameterKnob>(func->GetParName(3), func, 3, IndicatorProperties::Type_t::slider_horizontal, kRed, 3);
     AddKnob<KnobsTF1::RangeKnob>("Min", func, KnobsTF1::RangeKnob::RangeEndType::lower);
     AddKnob<KnobsTF1::RangeKnob>("Max", func, KnobsTF1::RangeKnob::RangeEndType::upper);
+    AddKnob<KnobsTF1::ParLimitKnob>("offset low lim", func, 3, KnobsTF1::ParLimitKnob::LimitEndType::lower, IndicatorProperties::Type_t::slider_horizontal);
 }
 
 FitGausPol0ParLimits::~FitGausPol0ParLimits()

@@ -173,3 +173,45 @@ void FixedRangeKnob::FixedRangeKnob::set(double a)
 {
     (void)a;
 }
+
+ParLimitKnob::ParLimitKnob(const std::string& Name, TF1* Func, int par, LimitEndType LimType, IndicatorProperties::Type_t type, Color_t color, double LineW):
+    IndicatorKnob(Name, IndicatorProperties(type,color,LineW)),
+    func(Func),
+    parameter_index(par),
+    limtype(LimType)
+{
+}
+
+double ParLimitKnob::get() const
+{
+    double low, high;
+    func->GetParLimits(parameter_index, low, high);
+    if(limtype==LimitEndType::lower) {
+        return low;
+    }
+    return high;
+}
+
+void ParLimitKnob::set(double a)
+{
+    double parval = func->GetParameter(parameter_index);
+    double high, low;
+    func->GetParLimits(parameter_index, low, high);
+    if(limtype==LimitEndType::lower) {
+        if(high==0){
+            func->SetParLimits(parameter_index,a,2*parval-a);
+            return;
+        }
+        func->SetParLimits(parameter_index,a,high);
+        return;
+    }
+    if(limtype==LimitEndType::upper) {
+        if(low==0){
+            func->SetParLimits(parameter_index,2*parval-a,a);
+            return;
+        }
+        func->SetParLimits(parameter_index,low,a);
+        return;
+    }
+}
+
