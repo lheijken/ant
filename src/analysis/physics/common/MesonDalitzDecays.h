@@ -7,6 +7,7 @@
 #include "analysis/plot/PromptRandomHist.h"
 #include "base/WrapTTree.h"
 #include "analysis/utils/TriggerSimulation.h"
+#include "analysis/utils/ClusterTools.h"
 
 
 #include "root-addons/cbtaps_display/TH2CB.h"
@@ -176,13 +177,9 @@ protected:
 
     std::shared_ptr<ant::Detector_t> cb;
 
-    template<typename T>
-    void shift_right(std::vector<T>&);
+    utils::ClusterTools clustertools;
 
-    void remove_char(std::string&, char);
-    void remove_chars(std::string&, std::initializer_list<char>);
-
-    double calc_effective_radius(const TCandidatePtr);
+    double effective_radius(const TCandidatePtr) const;
 
     ParticleTypeTree base_tree();
     ParticleTypeTree eta_3g();

@@ -5,6 +5,7 @@
 
 #include "base/Logger.h"
 #include "base/interval.h"
+#include "base/std_ext/vector.h"
 
 #include "expconfig/ExpConfig.h"
 
@@ -110,22 +111,30 @@ double max(const std::vector<double>& data)
     return *max_element(data.cbegin(), data.cend());
 }
 
-template <typename T>
-vector<size_t> get_sorted_indices(vector<T> vec)
+vector<double> get_veto_energies(vector<TSimpleParticle> particles)
 {
-    vector<size_t> p(vec.size());
-    std::iota(p.begin(), p.end(), 0);
-    std::sort(p.begin(), p.end(),
-              [vec] (size_t i, size_t j) {
-        return vec[i] > vec[j];
-    });
+    vector<double> veto_energies;
+    for (const auto& p : particles)
+        veto_energies.emplace_back(p.VetoE);
 
-    return p;
+    return veto_energies;
+}
+
+vector<size_t> get_sorted_indices_vetoE(vector<TSimpleParticle> particles)
+{
+    return std_ext::get_sorted_indices_desc(get_veto_energies(particles));
+}
+
+double im_ee(vector<TSimpleParticle> photons)
+{
+    const auto leptons = get_sorted_indices_vetoE(photons);
+
+    return (photons.at(leptons[0]) + photons.at(leptons[1])).M();
 }
 
 double im_ee(vector<double> vetoE, vector<TLorentzVector> photons)
 {
-    const auto leptons = get_sorted_indices(vetoE);
+    const auto leptons = std_ext::get_sorted_indices_desc(vetoE);
 
     return (photons.at(leptons[0]) + photons.at(leptons[1])).M();
 }
@@ -232,7 +241,7 @@ struct Hist_t {
                 const std::vector<std::array<size_t, 2>> pi0_combs = {{0, 2}, {1, 2}};
 
                 const auto photons = f.Tree.photons();
-                const auto sorted = get_sorted_indices(f.Tree.photons_vetoE());
+                const auto sorted = get_sorted_indices_vetoE(photons);
 
                 for (const auto pi0_comb : pi0_combs) {
                     pi0 = TLorentzVector(0., 0., 0., 0.);
@@ -261,7 +270,7 @@ struct Hist_t {
 
         static bool distinctPIDCut(const Fill_t& f) noexcept {
             const auto channels = f.Tree.photons_vetoChannel();
-            const auto idx = get_sorted_indices(f.Tree.photons_vetoE());
+            const auto idx = get_sorted_indices_vetoE(f.Tree.photons());
 
             return channels.at(idx[0]) != channels.at(idx[1]);
         }
@@ -286,8 +295,8 @@ struct Hist_t {
         };
 
         static bool pid_cut(const Fill_t& f, const double threshold) {
-            const auto vetos = f.Tree.photons_vetoE();
-            const auto idx = get_sorted_indices(vetos);
+            const auto vetos = get_veto_energies(f.Tree.photons());
+            const auto idx = std_ext::get_sorted_indices_desc(vetos);
 
             return vetos.at(idx[0]) > threshold && vetos.at(idx[1]) > threshold;
         }
@@ -401,44 +410,48 @@ struct SigHist_t : Hist_t<physics::EtapDalitz::SigTree_t> {
                [] (TH1D* h, const Fill_t& f) { h->Fill(f.Tree.treefit_freeZ_ZVertex, f.TaggW());
         });
 
+        AddTH1("Discarded Energy", "discarded Ek [MeV]", "#", Bins(500, 0, 100), "discardedEk",
+               [] (TH1D* h, const Fill_t& f) { h->Fill(f.Tree.DiscardedEk, f.TaggW());
+        });
+
 //        AddTH2("IM(e+e-) vs. IM(e+e-g)", "IM(e+e-g) [MeV]", "IM(e+e-) [MeV]", BinSettings(600, 0, 1200), BinSettings(500, 0, 1000), "IM2d",
 //               [] (TH2D* h, const Fill_t& f) {
-//            h->Fill(f.Tree.etap().M(), im_ee(f.Tree.photons_vetoE(), f.Tree.photons()), f.TaggW());
+//            h->Fill(f.Tree.etap().M(), im_ee(f.Tree.photons()), f.TaggW());
 //        });
 
 //        AddTH2("IM(e+e-) vs. IM(e+e-g) prompt", "IM(e+e-g) [MeV]", "IM(e+e-) [MeV]", BinSettings(600, 0, 1200), BinSettings(500, 0, 1000), "IM2d_prompt",
 //               [] (TH2D* h, const Fill_t& f) {
 //            if (f.TaggW() > 0)
-//                h->Fill(f.Tree.etap().M(), im_ee(f.Tree.photons_vetoE(), f.Tree.photons()));
+//                h->Fill(f.Tree.etap().M(), im_ee(f.Tree.photons()));
 //        });
 
 //        AddTH2("IM(e+e-) vs. IM(e+e-g) random", "IM(e+e-g) [MeV]", "IM(e+e-) [MeV]", BinSettings(600, 0, 1200), BinSettings(500, 0, 1000), "IM2d_random",
 //               [] (TH2D* h, const Fill_t& f) {
 //            if (f.TaggW() < 0)
-//                h->Fill(f.Tree.etap().M(), im_ee(f.Tree.photons_vetoE(), f.Tree.photons()));
+//                h->Fill(f.Tree.etap().M(), im_ee(f.Tree.photons()));
 //        });
 
 //        AddTH2("IM(e+e-) vs. IM(e+e-g) fit", "IM(e+e-g) [MeV]", "IM(e+e-) [MeV]", BinSettings(600, 0, 1200), BinSettings(500, 0, 1000), "IM2d_fit",
 //               [] (TH2D* h, const Fill_t& f) {
-//            h->Fill(f.Tree.etap_kinfit().M(), im_ee(f.Tree.photons_vetoE(), f.Tree.photons_kinfitted()), f.TaggW());
+//            h->Fill(f.Tree.etap_kinfit().M(), im_ee(get_veto_energies(f.Tree.photons()), f.Tree.photons_kinfitted()), f.TaggW());
 //        });
 
 //        AddTH2("IM(e+e-) vs. IM(e+e-g) fit prompt", "IM(e+e-g) [MeV]", "IM(e+e-) [MeV]", BinSettings(600, 0, 1200), BinSettings(500, 0, 1000), "IM2d_fit_prompt",
 //               [] (TH2D* h, const Fill_t& f) {
 //            if (f.TaggW() > 0)
-//                h->Fill(f.Tree.etap_kinfit().M(), im_ee(f.Tree.photons_vetoE(), f.Tree.photons_kinfitted()));
+//                h->Fill(f.Tree.etap_kinfit().M(), im_ee(get_veto_energies(f.Tree.photons()), f.Tree.photons_kinfitted()));
 //        });
 
 //        AddTH2("IM(e+e-) vs. IM(e+e-g) fit random", "IM(e+e-g) [MeV]", "IM(e+e-) [MeV]", BinSettings(600, 0, 1200), BinSettings(500, 0, 1000), "IM2d_fit_random",
 //               [] (TH2D* h, const Fill_t& f) {
 //            if (f.TaggW() < 0)
-//                h->Fill(f.Tree.etap_kinfit().M(), im_ee(f.Tree.photons_vetoE(), f.Tree.photons_kinfitted()));
+//                h->Fill(f.Tree.etap_kinfit().M(), im_ee(get_veto_energies(f.Tree.photons()), f.Tree.photons_kinfitted()));
 //        });
 
 //        AddTH2("Cluster Size vs. Energy", "Energy [MeV]", "Cluster Size", Ebins, BinSettings(50), "clusterSize_E",
 //               [] (TH2D* h, const Fill_t& f) {
 //            for (unsigned i = 0; i < f.Tree.photons().size(); i++)
-//                h->Fill(f.Tree.photons().at(i).Energy(), f.Tree.photons_clusterSize().at(i), f.TaggW());
+//                h->Fill(f.Tree.photons().at(i).Energy(), f.Tree.photons().at(i).ClusterSize, f.TaggW());
 //        });
 
         AddTH1("Effective Cluster Radius", "R", "#", BinSettings(500, 0, 50), "clusterRadius",
@@ -453,17 +466,17 @@ struct SigHist_t : Hist_t<physics::EtapDalitz::SigTree_t> {
                 h->Fill(f.Tree.photons_lat_moment().at(i), f.TaggW());
         });
 
-//        AddTH2("Effective Cluster Radius vs. Energy", "Energy [MeV]", "R", Bins(300, 0, 1200), BinSettings(200, 0, 50), "clusterRadius_E",
-//               [] (TH2D* h, const Fill_t& f) {
-//            for (unsigned i = 0; i < f.Tree.photons().size(); i++)
-//                h->Fill(f.Tree.photons().at(i).Energy(), f.Tree.photons_effect_radius().at(i), f.TaggW());
-//        });
+        AddTH2("Effective Cluster Radius vs. Energy", "Energy [MeV]", "R", Bins(300, 0, 1200), BinSettings(200, 0, 50), "clusterRadius_E",
+               [] (TH2D* h, const Fill_t& f) {
+            for (unsigned i = 0; i < f.Tree.photons().size(); i++)
+                h->Fill(f.Tree.photons().at(i).Energy(), f.Tree.photons_effect_radius().at(i), f.TaggW());
+        });
 
-//        AddTH2("Lateral Moment vs. Energy", "Energy [MeV]", "L", Bins(300, 0, 1200), BinSettings(100, 0, 1), "lateralMoment_E",
-//               [] (TH2D* h, const Fill_t& f) {
-//            for (unsigned i = 0; i < f.Tree.photons().size(); i++)
-//                h->Fill(f.Tree.photons().at(i).Energy(), f.Tree.photons_lat_moment().at(i), f.TaggW());
-//        });
+        AddTH2("Lateral Moment vs. Energy", "Energy [MeV]", "L", Bins(300, 0, 1200), BinSettings(100, 0, 1), "lateralMoment_E",
+               [] (TH2D* h, const Fill_t& f) {
+            for (unsigned i = 0; i < f.Tree.photons().size(); i++)
+                h->Fill(f.Tree.photons().at(i).Energy(), f.Tree.photons_lat_moment().at(i), f.TaggW());
+        });
 
 //        AddTH2("Lateral Moment vs. Effective Cluster Radius", "R", "L", BinSettings(500, 0, 50), BinSettings(200, 0, 1), "lateralMoment_clusterRadius",
 //               [] (TH2D* h, const Fill_t& f) {
@@ -478,18 +491,18 @@ struct SigHist_t : Hist_t<physics::EtapDalitz::SigTree_t> {
 
         AddTH1("TOF TAPS photon", "TOF [ns]", "#", TaggTime, "TOF_gTAPS",
                [] (TH1D* h, const Fill_t& f) {
-            const auto idx = get_sorted_indices(f.Tree.photons_vetoE());
+            const auto idx = get_sorted_indices_vetoE(f.Tree.photons());
             if (f.Tree.photons_detector().at(idx[2]) != 2)
                 return;
-            h->Fill(f.Tree.photons_Time().at(idx[2]));
+            h->Fill(f.Tree.photons().at(idx[2]).Time);
         });
 
-        if (!isLeaf)
-            return;
+//        if (!isLeaf)
+//            return;
 
         AddTH2("IM(e+e-) vs. IM(e+e-g) [TFF]", "IM(e+e-g) [MeV]", "IM(e+e-) [MeV]", BinSettings(240, 0, 1200), BinSettings(20, 0, 1000), "TFFextract",
                [] (TH2D* h, const Fill_t& f) {
-            h->Fill(f.Tree.etap_kinfit().M(), im_ee(f.Tree.photons_vetoE(), f.Tree.photons_kinfitted()), f.TaggW());
+            h->Fill(f.Tree.etap_kinfit().M(), im_ee(get_veto_energies(f.Tree.photons()), f.Tree.photons_kinfitted()), f.TaggW());
         });
 
     }
@@ -648,13 +661,6 @@ struct SigHist_t : Hist_t<physics::EtapDalitz::SigTree_t> {
                               //{"PID e^{#pm} > .4 MeV", [] (const Fill_t& f) { return TreeCuts::pid_cut(f, .4); }},
                               {"PID e^{#pm} > .5 MeV", [] (const Fill_t& f) { return TreeCuts::pid_cut(f, .5); }},
                               {"PID e^{#pm} > .6 MeV", [] (const Fill_t& f) { return TreeCuts::pid_cut(f, .6); }}
-                          });
-
-        cuts.emplace_back(MultiCut_t<Fill_t>{
-                              {"discarded Ek <= 0 MeV",  [] (const Fill_t& f) { return TreeCuts::discarded_energy(f,  0.); }},
-                              {"discarded Ek <= 20 MeV", [] (const Fill_t& f) { return TreeCuts::discarded_energy(f, 20.); }},
-                              {"discarded Ek <= 40 MeV", [] (const Fill_t& f) { return TreeCuts::discarded_energy(f, 40.); }},
-                              {"discarded Ek <= 60 MeV", [] (const Fill_t& f) { return TreeCuts::discarded_energy(f, 60.); }}
                           });
 
         return cuts;

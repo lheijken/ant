@@ -8,6 +8,7 @@
 #include "base/std_ext/shared_ptr_container.h"
 #include "base/std_ext/math.h"
 #include "base/std_ext/misc.h"
+#include "base/std_ext/vector.h"
 
 #include "base/tmpfile_t.h"
 
@@ -78,9 +79,17 @@ void TestString() {
     const string test("Hallo Welt!");
     REQUIRE(std_ext::string_ends_with(test, "Welt!"));
     REQUIRE_FALSE(std_ext::string_ends_with(test, "Bla"));
+    // starts_with
+    REQUIRE(std_ext::string_starts_with(test, "Hallo"));
 
-    // removesubstr
+    // tokenize
     string str("foo bar foo bar!");
+    const auto tokens = std_ext::tokenize_string(str, " ");
+    REQUIRE(tokens.size() == 4);
+    REQUIRE(tokens.back() == "bar!");
+    // concantenate
+    REQUIRE(std_ext::concatenate_string(tokens, "_") == "foo_bar_foo_bar!");
+    // removesubstr
     REQUIRE_NOTHROW(std_ext::removesubstr(str,"bar"));
     REQUIRE(str == string("foo  foo !"));
 
@@ -97,9 +106,18 @@ void TestString() {
     REQUIRE(std_ext::string_sanitize("a") == "a");
     REQUIRE(std_ext::string_sanitize("a b") == "a b");
 
+    // remove characters
+    string special_chars("test #pi^{0}");
+    std_ext::remove_chars(special_chars, {'#', '{', '}', '^'});
+    REQUIRE(special_chars == string("test pi0"));
+
     // formatter
     REQUIRE_NOTHROW(s = std_ext::formatter() << "hallo" << 2 << 5 << "du " << setw(3) << 1);
     REQUIRE(s == string("hallo25du   1"));
+
+    // basename
+    REQUIRE(std_ext::basename("just/some/path") == "/path");
+    REQUIRE(std_ext::basename("no_path") == "no_path");
 
 }
 
@@ -109,6 +127,30 @@ void TestVector() {
 
     REQUIRE(std_ext::contains(t,3));
     REQUIRE_FALSE(std_ext::contains(t,8));
+
+    const std::vector<int> v = {3,6,2,8,4};
+    const auto sorted_asc = std_ext::get_sorted_indices(v);
+    const auto sorted_desc = std_ext::get_sorted_indices_desc(v);
+    REQUIRE(sorted_asc.size() == 5);
+    REQUIRE(sorted_asc.at(1) == 0);
+    REQUIRE(sorted_asc[2] == 4);
+    REQUIRE(v[sorted_asc.front()] == 2);
+    REQUIRE(v[sorted_asc.back()] == 8);
+    REQUIRE(sorted_desc.front() == 3);
+    REQUIRE(sorted_desc.back() == 2);
+
+    // test circular rotations / shifts in container.h
+    auto s(v);
+    std_ext::shift_right(s);
+    REQUIRE(s[0] == 4);
+    std_ext::shift_right(s);
+    REQUIRE(s[0] == 8);
+    std::list<int> l;
+    std::copy(s.begin(), s.end(), std::back_inserter(l));
+    std_ext::shift_left(l);
+    REQUIRE(l.back() == 8);
+    std_ext::shift_left(l);
+    REQUIRE(l.front() == 3);
 }
 
 
@@ -283,11 +325,10 @@ void TestDereference() {
     };
 
     A a;
-    shared_ptr<A> a_shared = make_shared<A>(a);
-    unique_ptr<A> a_unique = std_ext::make_unique<A>(a);
+    auto a_shared = make_shared<A>(a);
+    auto a_unique = std_ext::make_unique<A>(a);
 
-    /// \todo substitution fails with old GCC version used for Travis CI
-    //REQUIRE(std_ext::dereference(a).check());
+    REQUIRE(std_ext::dereference(a).check());
     REQUIRE(std_ext::dereference(addressof(a)).check());
     REQUIRE(std_ext::dereference(a_shared).check());
     REQUIRE(std_ext::dereference(a_unique).check());

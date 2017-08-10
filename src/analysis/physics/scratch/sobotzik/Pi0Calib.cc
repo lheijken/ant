@@ -29,6 +29,8 @@ scratch_sobotzik_Pi0Calib::scratch_sobotzik_Pi0Calib(const string& name, Options
     h_CB_E_True_Opening_Angle = HistFac.makeTH2D("IM: CB true Opening Angle & Rec. Energy", "IM / MeV","E_{#gamma} [MeV]",bins_IM,BinSettings(32,0,800),"IM_CB_True_Angle");
     h_CB_Angle_True_E_Angle = HistFac.makeTH2D("IM: CB true Energy & Rec. Opening Angle", "IM / MeV","E_{#gamma} [MeV]",bins_IM,BinSettings(32,0,800),"IM_CB_True_E");
 
+
+
     h_IM_CB_all             = HistFac.makeTH2D("IM: CB",   "IM / MeV","E_{#gamma} [MeV]",bins_IM,BinSettings(32,0,800),"IM_CB_All");
 
     h_Meson_Energy_interval =HistFac.makeTH3D("MC-Meson-Symmetric-Photons","IM / MeV", "E_{#gamma} [MeV]", "Meson Energy [MeV]",bins_IM,BinSettings(32,0,800),BinSettings(158,0,1580),"Meson_Energy_Interval");
@@ -79,6 +81,18 @@ scratch_sobotzik_Pi0Calib::scratch_sobotzik_Pi0Calib(const string& name, Options
     h_ClusterHitTiming_TAPS = HistFac.makeTH2D("ClusterHitTiming: TAPS", "Energy","t / ns",bins_energy,bins_timing,"ClusterHitTiming_TAPS");
 
     h_IM_CB_ClusterSize3 = HistFac.makeTH2D("IM Clustersize > 3", "IM / MeV","E_{#gamma} [MeV]",bins_IM,BinSettings(32,0,800),"IM_CB_ClusterSize3");
+
+
+
+//    h_CB_Theta_Diff = HistFac.makeTH3D("#Theta_{true} - #Theta_{rec} vs. #Theta_{rec} for different energies","#Theta_{rec} [#circ]","#Theta_{true} - #Theta_{rec}","E_{#gamma} [MeV]",BinSettings(180,0,180),BinSettings(20,-10,10),BinSettings(32,0,800),"CB_Theta_Diff");
+//    h_CB_Theta_Diff = HistFac.makeTH3D("#Phi_{true} - #Phi_{rec} vs. #Phi_{rec} for different energies","#Phi_{rec} [#circ]","#Phi_{true} - #Phi_{rec}","E_{#gamma} [MeV]",BinSettings(180,0,180),BinSettings(20,-10,10),BinSettings(32,0,800),"CB_Phi_Diff");
+
+
+
+
+
+
+
 
     for(int i=0;i<8;++i) {
         const string name_Symmetric = std_ext::formatter() << "CB " << i * 100 <<" MeV to "<<(i+1) * 100<<" MeV Clustersize > 3";
@@ -227,7 +241,10 @@ void scratch_sobotzik_Pi0Calib::ProcessEvent(const TEvent& event, manager_t&)
     int clen = c_CB.size();
     double  rec_opening_angle  = 0;
     double  true_opening_angle = 0;
-
+    auto true_theta1 =0.0;
+    auto true_theta2 =0.0;
+    auto true_phi1 =0.0;
+    auto true_phi2 =0.0;
     if(true_pi0_tree)
     {
         for(const auto& gamma : true_gamma)
@@ -259,6 +276,12 @@ void scratch_sobotzik_Pi0Calib::ProcessEvent(const TEvent& event, manager_t&)
         //opening_angle between the candidates
         rec_opening_angle  = static_cast<vec3>(*c_CB.at(0)).Angle(*c_CB.at(1));
         true_opening_angle = true_cand_array[0].Angle(true_cand_array[1]);
+
+        true_theta1 = true_cand_array[0].Theta();
+        true_theta2 = true_cand_array[1].Theta();
+        true_phi1   = true_cand_array[0].Phi();
+        true_phi2   = true_cand_array[1].Phi();
+
     }
 
     double angleedge = 30;
@@ -293,10 +316,11 @@ void scratch_sobotzik_Pi0Calib::ProcessEvent(const TEvent& event, manager_t&)
             t.E1 = c_CB.at(0)->CaloEnergy;
             t.E2 = c_CB.at(1)->CaloEnergy;
             t.M  = sum_CB.M();
-            t.Theta1 = c_CB.at(0)->Theta;
-            t.Theta2 = c_CB.at(1)->Theta;
-            t.Phi1   = c_CB.at(0)->Phi;
-            t.Phi2   = c_CB.at(1)->Phi;
+            t.Theta1_rec = c_CB.at(0)->Theta;
+            t.Theta2_rec = c_CB.at(1)->Theta;
+            t.Phi1_rec   = c_CB.at(0)->Phi;
+            t.Phi2_rec   = c_CB.at(1)->Phi;
+
             t.ClusterSize1 = c_CB.at(0)->FindCaloCluster()->Hits.size();
             t.ClusterSize2 = c_CB.at(1)->FindCaloCluster()->Hits.size();
             t.OpeningAngle = rec_opening_angle;
@@ -304,16 +328,22 @@ void scratch_sobotzik_Pi0Calib::ProcessEvent(const TEvent& event, manager_t&)
             t.ClusterNumber2 = c_CB.at(1)->FindCaloCluster()->CentralElement;
             t.w = promptrandom.FillWeight();
 
+
+
             if(true_pi0){
                 t.ZVertex = zVertex;
                 t.true_E1 = true_gamma_energy[0];
                 t.true_E2 = true_gamma_energy[1];
                 t.true_openingangle = true_opening_angle;
                 t.true_m = sqrt(2 * true_gamma_energy[0] * true_gamma_energy[1] * (1 - cos(true_opening_angle)));
+                t.Theta1_true=true_theta1;
+                t.Theta2_true=true_theta2;
+                t.Phi1_true  =true_phi1;
+                t.Phi2_true  =true_phi2;
 
             }
 
-
+            LOG(INFO)<<true_theta1<<"Rec:"<< c_CB.at(0)->Theta <<endl;
             t.Tree->Fill();
             if(sum_CB.M() > 70.0 && sum_CB.M() < 220.0)
             {
@@ -420,6 +450,8 @@ void scratch_sobotzik_Pi0Calib::ProcessEvent(const TEvent& event, manager_t&)
 
                     h_CB_Angle_True_E_Angle->Fill(sqrt(2 * true_gamma_energy[0] * true_gamma_energy[1] * (1-cos(rec_opening_angle))),c_CB.at(0)->CaloEnergy);
                     h_CB_Angle_True_E_Angle->Fill(sqrt(2 * true_gamma_energy[1] * true_gamma_energy[1] * (1-cos(rec_opening_angle))),c_CB.at(1)->CaloEnergy);
+
+
                 }
 
 
@@ -459,6 +491,27 @@ void scratch_sobotzik_Pi0Calib::ProcessEvent(const TEvent& event, manager_t&)
     //All Photons allowed
     if(sum_CB.M()>1.0)
     {
+        t.All_E1_rec = c_CB.at(0)->CaloEnergy;
+        t.All_E2_rec = c_CB.at(1)->CaloEnergy;
+        t.All_OpeningAngle_rec = rec_opening_angle;
+        t.All_Phi1_rec= c_CB.at(0)->Phi;
+        t.All_Phi2_rec= c_CB.at(1)->Phi;
+        t.All_Theta1_rec= c_CB.at(0)->Theta;
+        t.All_Theta2_rec= c_CB.at(1)->Theta;
+
+
+
+
+
+        if(true_pi0){
+            t.All_E1_true = true_gamma_energy[0];
+            t.All_E2_true = true_gamma_energy[1];
+            t.All_Phi1_true=true_phi1;
+            t.All_Phi2_true=true_phi2;
+            t.All_Theta1_true=true_theta1;
+            t.All_Theta2_true=true_theta2;
+            t.All_OpeningAngle_true= true_opening_angle;
+        }
 
 
 
